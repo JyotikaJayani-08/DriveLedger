@@ -1,0 +1,347 @@
+/**
+ * Mileage Calculation Engine
+ *
+ * THE HEART OF THE APP. This is the core value proposition.
+ *
+ * Calculates mileage/efficiency for vehicles based on their fuel type.
+ * Uses different formulas depending on the fuel type:
+ *   - Petrol / Diesel / Hybrid → km/L (tank-to-tank method)
+ *   - CNG / LPG               → km/kg (tank-to-tank method)
+ *   - Electric                 → km/kWh (charge-to-charge method)
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ * TANK-TO-TANK RULES (Petrol / Diesel / CNG / LPG / Hybrid)
+ * ═══════════════════════════════════════════════════════════════════
+ *
+ * R1: Current entry MUST be a full tank fill.
+ * R2: A previous full-tank entry MUST exist for the same vehicle.
+ * R3: Partial fills are RECORDED but SKIPPED in mileage calculation.
+ * R4: Fuel filled across partial fills between two full tanks is
+ *     ACCUMULATED and included in the next full-tank calculation.
+ * R5: Calculated mileage is STORED on each qualifying fuel entry.
+ * R6: Running average = arithmetic mean of all stored calculated_mileage.
+ * R7: If fewer than two full-tank entries exist, display "Not enough data."
+ * R8: Monthly average = mean of calculated_mileage in the current month.
+ * R9: Best / Worst = highest / lowest single calculated_mileage value.
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ * EV RULES
+ * ═══════════════════════════════════════════════════════════════════
+ *
+ * EV-R1: Every charge session is logged. No full/partial distinction.
+ * EV-R2: Efficiency is calculated between every two consecutive charges.
+ * EV-R3: Running average = mean of all stored efficiency values.
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ * EXAMPLE (Petrol/Diesel)
+ * ═══════════════════════════════════════════════════════════════════
+ *
+ * Entry 1: Odometer 10,000 | 30L | Full Tank → no mileage (first fill)
+ * Entry 2: Odometer 10,200 |  8L | Partial   → skipped (partial)
+ * Entry 3: Odometer 10,500 | 22L | Full Tank → 500 / (8+22) = 16.67 km/L
+ *
+ * Entry 3 accumulates the partial (8L) + current (22L) and divides
+ * by distance from entry 1 (10,500 - 10,000 = 500 km).
+ */
+
+import { FuelType, FuelUnit, FUEL_UNIT_TO_MILEAGE_UNIT, MileageUnit } from '@/constants/fuelTypes';
+import { VehicleType } from '@/constants/fuelTypes';
+import type { FuelEntry } from '@/types/fuel';
+
+// ─── Types ───────────────────────────────────────────────────────────
+
+export interface MileageResult {
+  /** The calculated mileage value (km/L, km/kg, or km/kWh) */
+  value: number;
+  /** The unit of the mileage value */
+  unit: MileageUnit;
+}
+
+export interface MileageStats {
+  /** Last fill's mileage (most recent calculation) */
+  lastFillMileage: MileageResult | null;
+  /** Running average across all calculated entries */
+  runningAverage: MileageResult | null;
+  /** Average for the current calendar month */
+  monthlyAverage: MileageResult | null;
+  /** Highest single mileage value ever recorded */
+  best: MileageResult | null;
+  /** Lowest single mileage value ever recorded */
+  worst: MileageResult | null;
+}
+
+export interface MileageWarning {
+  type: 'suspiciously_high' | 'suspiciously_low';
+  message: string;
+  value: number;
+  threshold: number;
+}
+
+// ─── Reasonableness Thresholds ──────────────────────────────────────
+/**
+ * Vehicle-type-aware thresholds for mileage sanity checks.
+ *
+ * WHY different thresholds per vehicle type?
+ * A two-wheeler in India routinely achieves 60-80 km/L. A global
+ * car-centric threshold (e.g., > 30 km/L is suspicious) would
+ * incorrectly flag every two-wheeler fill-up as suspicious.
+ */
+
+interface MileageThreshold {
+  high: number;
+  low: number;
+  unit: string;
+}
+
+const MILEAGE_THRESHOLDS: Record<string, MileageThreshold> = {
+  // VehicleType + FuelUnit combinations
+  'car_litres':          { high: 30, low: 4,  unit: 'km/L' },
+  'car_kg':              { high: 60, low: 5,  unit: 'km/kg' },
+  'car_kWh':             { high: 15, low: 2,  unit: 'km/kWh' },
+  'two_wheeler_litres':  { high: 100, low: 20, unit: 'km/L' },
+  'two_wheeler_kg':      { high: 60, low: 5,  unit: 'km/kg' },
+  'three_wheeler_litres':{ high: 60, low: 10, unit: 'km/L' },
+  'three_wheeler_kg':    { high: 60, low: 5,  unit: 'km/kg' },
+  'other_litres':        { high: 30, low: 4,  unit: 'km/L' },
+  'other_kg':            { high: 60, low: 5,  unit: 'km/kg' },
+  'other_kWh':           { high: 15, low: 2,  unit: 'km/kWh' },
+};
+
+// ─── Core Calculation ───────────────────────────────────────────────
+
+/**
+ * Calculates mileage for a single fuel entry using the tank-to-tank method.
+ *
+ * This function walks backwards through the entry chain to find the
+ * previous full-tank entry and accumulates all partial fills in between.
+ *
+ * @param entries - ALL fuel entries for the vehicle, sorted by odometer ASC
+ * @param currentIndex - Index of the entry to calculate mileage for
+ * @param fuelType - The vehicle's fuel type (determines the formula)
+ * @returns The calculated mileage result, or null if not calculable
+ */
+export function calculateMileageForEntry(
+  entries: FuelEntry[],
+  currentIndex: number,
+  fuelType: FuelType
+): MileageResult | null {
+  const current = entries[currentIndex];
+
+  // ── EV: charge-to-charge (no full/partial concept) ──
+  if (fuelType === FuelType.ELECTRIC) {
+    return calculateEVEfficiency(entries, currentIndex);
+  }
+
+  // ── Petrol / Diesel / CNG / LPG / Hybrid: tank-to-tank ──
+
+  // R1: Current entry must be a full tank fill
+  if (current.is_full_tank !== 1) {
+    return null;
+  }
+
+  // R2: Walk backwards to find the previous full-tank entry
+  let previousFullTankIndex = -1;
+  let accumulatedFuel = 0;
+
+  for (let i = currentIndex - 1; i >= 0; i--) {
+    // R4: Accumulate fuel from partial fills
+    accumulatedFuel += entries[i].fuel_amount;
+
+    if (entries[i].is_full_tank === 1) {
+      previousFullTankIndex = i;
+      break;
+    }
+  }
+
+  // R7: No previous full-tank entry exists
+  if (previousFullTankIndex === -1) {
+    return null;
+  }
+
+  const previousFullTank = entries[previousFullTankIndex];
+
+  // Distance between the two full-tank entries
+  const distance = current.odometer - previousFullTank.odometer;
+
+  if (distance <= 0) {
+    return null;
+  }
+
+  // Total fuel consumed between the two full-tank fills:
+  // All fuel from entries AFTER the previous full tank through current entry,
+  // excluding the previous full tank's own fuel (consumed before its odometer).
+  const totalFuel = accumulatedFuel + current.fuel_amount - previousFullTank.fuel_amount;
+
+  if (totalFuel <= 0) {
+    return null;
+  }
+
+  const mileage = distance / totalFuel;
+  const unit = FUEL_UNIT_TO_MILEAGE_UNIT[current.fuel_unit];
+
+  return { value: mileage, unit };
+}
+
+/**
+ * Calculates EV efficiency between two consecutive charge sessions.
+ *
+ * EV-R1: Every charge session is logged (no full/partial distinction).
+ * EV-R2: Efficiency = distance / kWh charged between consecutive sessions.
+ */
+function calculateEVEfficiency(
+  entries: FuelEntry[],
+  currentIndex: number
+): MileageResult | null {
+  if (currentIndex === 0) {
+    return null; // First charge — no previous reference point
+  }
+
+  const current = entries[currentIndex];
+  const previous = entries[currentIndex - 1];
+
+  const distance = current.odometer - previous.odometer;
+  if (distance <= 0) return null;
+
+  const kWh = current.fuel_amount;
+  if (kWh <= 0) return null;
+
+  const efficiency = distance / kWh;
+
+  return {
+    value: efficiency,
+    unit: MileageUnit.KM_PER_KWH,
+  };
+}
+
+// ─── Batch Recalculation ────────────────────────────────────────────
+
+/**
+ * Recalculates mileage for ALL entries of a vehicle.
+ * Called when a fuel entry is edited or deleted, which may affect
+ * downstream calculations in the chain.
+ *
+ * @param entries - ALL non-deleted fuel entries for the vehicle, sorted by odometer ASC
+ * @param fuelType - The vehicle's fuel type
+ * @returns Array of { entryId, mileage } pairs to be persisted
+ */
+export function recalculateAllMileage(
+  entries: FuelEntry[],
+  fuelType: FuelType
+): Array<{ entryId: string; mileage: MileageResult | null }> {
+  return entries.map((entry, index) => ({
+    entryId: entry.id,
+    mileage: calculateMileageForEntry(entries, index, fuelType),
+  }));
+}
+
+// ─── Statistics ─────────────────────────────────────────────────────
+
+/**
+ * Computes all mileage statistics for a vehicle.
+ *
+ * @param entries - ALL non-deleted fuel entries for the vehicle (any order)
+ * @returns MileageStats object with running average, monthly average, best/worst
+ */
+export function computeMileageStats(entries: FuelEntry[]): MileageStats {
+  // Filter to entries that have a calculated_mileage value
+  const withMileage = entries.filter(
+    (e) => e.calculated_mileage !== null && e.mileage_unit !== null
+  );
+
+  if (withMileage.length === 0) {
+    return {
+      lastFillMileage: null,
+      runningAverage: null,
+      monthlyAverage: null,
+      best: null,
+      worst: null,
+    };
+  }
+
+  // Sort by date descending for "last fill"
+  const sorted = [...withMileage].sort(
+    (a, b) => b.odometer - a.odometer
+  );
+
+  const lastEntry = sorted[0];
+  const unit = lastEntry.mileage_unit as MileageUnit;
+
+  // R6: Running average = arithmetic mean of all calculated_mileage values
+  const allValues = withMileage.map((e) => e.calculated_mileage!);
+  const runningAvg = allValues.reduce((sum, v) => sum + v, 0) / allValues.length;
+
+  // R8: Monthly average = mean of values in the current calendar month
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+  const monthlyValues = withMileage
+    .filter((e) => {
+      const d = new Date(e.date);
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    })
+    .map((e) => e.calculated_mileage!);
+  const monthlyAvg =
+    monthlyValues.length > 0
+      ? monthlyValues.reduce((sum, v) => sum + v, 0) / monthlyValues.length
+      : null;
+
+  // R9: Best / Worst
+  const best = Math.max(...allValues);
+  const worst = Math.min(...allValues);
+
+  return {
+    lastFillMileage: {
+      value: lastEntry.calculated_mileage!,
+      unit,
+    },
+    runningAverage: {
+      value: runningAvg,
+      unit,
+    },
+    monthlyAverage: monthlyAvg !== null ? { value: monthlyAvg, unit } : null,
+    best: { value: best, unit },
+    worst: { value: worst, unit },
+  };
+}
+
+// ─── Reasonableness Check ───────────────────────────────────────────
+
+/**
+ * Checks if a calculated mileage value is within reasonable bounds.
+ * Returns a warning if suspicious — but NEVER blocks saving.
+ *
+ * @param mileage - The calculated mileage value
+ * @param vehicleType - The vehicle type (car, two_wheeler, etc.)
+ * @param fuelUnit - The fuel unit (litres, kg, kWh)
+ * @returns A warning object if suspicious, null if reasonable
+ */
+export function checkMileageReasonableness(
+  mileage: number,
+  vehicleType: VehicleType,
+  fuelUnit: FuelUnit
+): MileageWarning | null {
+  const key = `${vehicleType}_${fuelUnit}`;
+  const threshold = MILEAGE_THRESHOLDS[key];
+
+  if (!threshold) return null; // No threshold defined for this combination
+
+  if (mileage > threshold.high) {
+    return {
+      type: 'suspiciously_high',
+      message: `${mileage.toFixed(1)} ${threshold.unit} seems unusually high. Please verify your entries.`,
+      value: mileage,
+      threshold: threshold.high,
+    };
+  }
+
+  if (mileage < threshold.low) {
+    return {
+      type: 'suspiciously_low',
+      message: `${mileage.toFixed(1)} ${threshold.unit} seems unusually low. Your vehicle may need attention.`,
+      value: mileage,
+      threshold: threshold.low,
+    };
+  }
+
+  return null;
+}

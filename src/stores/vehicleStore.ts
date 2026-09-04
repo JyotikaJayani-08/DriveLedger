@@ -1,0 +1,118 @@
+/**
+ * Vehicle Store (Zustand)
+ *
+ * Global state for vehicle data. Connects the UI layer to the
+ * repository layer (database).
+ *
+ * WHY Zustand?
+ * - Lightweight (~1KB), no boilerplate (unlike Redux).
+ * - Components subscribe to specific slices → no unnecessary re-renders.
+ * - Works perfectly with synchronous expo-sqlite calls.
+ *
+ * PATTERN:
+ * - State lives here.
+ * - Actions call repository functions then update state.
+ * - UI components read state via hooks and call actions.
+ */
+
+import { create } from 'zustand';
+import type { Vehicle, CreateVehicleInput, UpdateVehicleInput } from '@/types/vehicle';
+import * as vehicleRepo from '@/database/repositories/vehicleRepo';
+
+interface VehicleState {
+  /** All active (non-archived) vehicles */
+  vehicles: Vehicle[];
+  /** Currently selected vehicle (for dashboard, fuel entry, etc.) */
+  selectedVehicle: Vehicle | null;
+  /** Loading state for initial fetch */
+  isLoading: boolean;
+  /** Error message if something fails */
+  error: string | null;
+
+  // ── Actions ──
+  /** Load all active vehicles from the database */
+  loadVehicles: () => void;
+  /** Select a vehicle (sets it as the active dashboard vehicle) */
+  selectVehicle: (vehicleId: string) => void;
+  /** Create a new vehicle */
+  addVehicle: (input: CreateVehicleInput) => Vehicle;
+  /** Update an existing vehicle */
+  editVehicle: (id: string, input: UpdateVehicleInput) => Vehicle | null;
+  /** Archive a vehicle (hide from active list) */
+  archiveVehicle: (id: string) => void;
+  /** Restore an archived vehicle */
+  restoreVehicle: (id: string) => void;
+}
+
+export const useVehicleStore = create<VehicleState>((set, get) => ({
+  vehicles: [],
+  selectedVehicle: null,
+  isLoading: true,
+  error: null,
+
+  loadVehicles: () => {
+    try {
+      const vehicles = vehicleRepo.getActiveVehicles();
+      const currentSelected = get().selectedVehicle;
+
+      // If no vehicle is selected, auto-select the first one
+      // (charter: "Default vehicle auto-selected on app launch")
+      let selected = currentSelected;
+      if (!selected && vehicles.length > 0) {
+        selected = vehicles[0];
+      } else if (selected) {
+        // Refresh the selected vehicle data in case it was updated
+        selected = vehicles.find((v) => v.id === selected!.id) ?? vehicles[0] ?? null;
+      }
+
+      set({ vehicles, selectedVehicle: selected, isLoading: false, error: null });
+    } catch (e) {
+      set({ isLoading: false, error: 'Failed to load vehicles.' });
+    }
+  },
+
+  selectVehicle: (vehicleId: string) => {
+    const vehicle = get().vehicles.find((v) => v.id === vehicleId) ?? null;
+    set({ selectedVehicle: vehicle });
+  },
+
+  addVehicle: (input: CreateVehicleInput) => {
+    const newVehicle = vehicleRepo.createVehicle(input);
+    const vehicles = vehicleRepo.getActiveVehicles();
+
+    // If this is the first vehicle, auto-select it
+    const selected = get().selectedVehicle ?? newVehicle;
+
+    set({ vehicles, selectedVehicle: selected });
+    return newVehicle;
+  },
+
+  editVehicle: (id: string, input: UpdateVehicleInput) => {
+    const updated = vehicleRepo.updateVehicle(id, input);
+    if (updated) {
+      const vehicles = vehicleRepo.getActiveVehicles();
+      const currentSelected = get().selectedVehicle;
+      const selected = currentSelected?.id === id ? updated : currentSelected;
+      set({ vehicles, selectedVehicle: selected });
+    }
+    return updated;
+  },
+
+  archiveVehicle: (id: string) => {
+    vehicleRepo.archiveVehicle(id);
+    const vehicles = vehicleRepo.getActiveVehicles();
+    const currentSelected = get().selectedVehicle;
+
+    // If the archived vehicle was selected, switch to the first available
+    const selected = currentSelected?.id === id
+      ? (vehicles[0] ?? null)
+      : currentSelected;
+
+    set({ vehicles, selectedVehicle: selected });
+  },
+
+  restoreVehicle: (id: string) => {
+    vehicleRepo.restoreVehicle(id);
+    get().loadVehicles();
+  },
+}));

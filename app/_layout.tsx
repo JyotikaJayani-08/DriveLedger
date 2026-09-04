@@ -1,0 +1,79 @@
+/**
+ * Root Layout
+ *
+ * The top-level layout for the entire app.
+ * Sets up:
+ * - Status bar styling
+ * - Database initialization
+ * - Vehicle data loading
+ * - The Stack navigator that wraps the tab layout
+ */
+
+import { useEffect } from 'react';
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { useColorScheme } from 'react-native';
+import { getDatabase } from '@/database/connection';
+import { useVehicleStore } from '@/stores/vehicleStore';
+import {
+  setupNotificationChannel,
+  scheduleExpiryNotifications,
+} from '@/services/notificationService';
+
+export default function RootLayout() {
+  const colorScheme = useColorScheme();
+  const loadVehicles = useVehicleStore((s) => s.loadVehicles);
+  const vehicles = useVehicleStore((s) => s.vehicles);
+
+  useEffect(() => {
+    // Initialize database (creates tables if they don't exist)
+    getDatabase();
+
+    // Load vehicles into state
+    loadVehicles();
+
+    // Set up notification channel (Android)
+    setupNotificationChannel();
+  }, []);
+
+  // Schedule expiry notifications whenever vehicles list changes
+  useEffect(() => {
+    if (vehicles.length > 0) {
+      const vehicleIds = vehicles.map((v) => v.id);
+      scheduleExpiryNotifications(vehicleIds);
+    }
+  }, [vehicles]);
+
+  return (
+    <>
+      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen
+          name="onboarding"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
+          name="add-fuel"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
+          name="add-service"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
+          name="add-expense"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
+          name="add-document"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
+          name="add-vehicle"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+      </Stack>
+    </>
+  );
+}
