@@ -22,6 +22,8 @@ import { useExpenseStore } from '@/stores/expenseStore';
 import { useVehicleStore } from '@/stores/vehicleStore';
 import { MILEAGE_UNIT_LABELS } from '@/constants/fuelTypes';
 import { formatCurrency, formatMileage } from '@/utils/format';
+import { getMonthlySpendHistory } from '@/utils/statsHelpers';
+import { VehicleContextHeader } from '@/components/VehicleContextHeader';
 
 // ─── Pure RN Bar Chart Component ────────────────────────────────────
 
@@ -173,44 +175,14 @@ export default function StatsScreen() {
   });
 
   // ── Monthly cost (last 6 months) ──
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const now = new Date();
-  const monthlyCostData: { label: string; value: number }[] = [];
-
-  for (let i = 5; i >= 0; i--) {
-    const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const month = monthDate.getMonth();
-    const year = monthDate.getFullYear();
-    const label = monthNames[month];
-
-    const fuelTotal = entries
-      .filter((e) => {
-        const d = new Date(e.date);
-        return d.getMonth() === month && d.getFullYear() === year;
-      })
-      .reduce((sum, e) => sum + e.total_cost, 0);
-
-    const serviceTotal = serviceRecords
-      .filter((r) => {
-        const d = new Date(r.date);
-        return d.getMonth() === month && d.getFullYear() === year;
-      })
-      .reduce((sum, r) => sum + (r.cost || 0), 0);
-
-    const expenseTotal = expenses
-      .filter((e) => {
-        const d = new Date(e.date);
-        return d.getMonth() === month && d.getFullYear() === year;
-      })
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    monthlyCostData.push({ label, value: Math.round(fuelTotal + serviceTotal + expenseTotal) });
-  }
+  const monthlyCostData = getMonthlySpendHistory(entries, serviceRecords, expenses, 6);
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.content}>
-        <Text style={[Typography.h2, { color: colors.text, marginBottom: Spacing.xl }]}>
+        <VehicleContextHeader label="Stats for" />
+
+        <Text style={[Typography.h2, { color: colors.text, marginBottom: Spacing.xl, marginTop: Spacing.md }]}>
           {selectedVehicle.nickname} Stats
         </Text>
 

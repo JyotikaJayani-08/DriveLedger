@@ -21,28 +21,27 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Pressable,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useVehicleStore } from '@/stores/vehicleStore';
 import { useFuelStore } from '@/stores/fuelStore';
 import { useServiceStore, getKmUntilService } from '@/stores/serviceStore';
-import { useExpenseStore, getMonthlyExpenseTotal } from '@/stores/expenseStore';
+import { useExpenseStore } from '@/stores/expenseStore';
 import { useDocumentStore } from '@/stores/documentStore';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { Typography, Spacing, Sizing } from '@/constants/theme';
 import { MILEAGE_UNIT_LABELS } from '@/constants/fuelTypes';
 import { formatCurrency, formatOdometer, formatMileage } from '@/utils/format';
 import { formatDisplayDateLong, daysUntil } from '@/utils/date';
+import { getCurrentMonthTotalSpend } from '@/utils/statsHelpers';
 import { DOCUMENT_TYPE_LABELS } from '@/constants/documentTypes';
+import { VehicleContextHeader } from '@/components/VehicleContextHeader';
 
 export default function HomeScreen() {
   const colors = useThemeColors();
   const router = useRouter();
 
   const selectedVehicle = useVehicleStore((s) => s.selectedVehicle);
-  const vehicles = useVehicleStore((s) => s.vehicles);
-  const selectVehicle = useVehicleStore((s) => s.selectVehicle);
 
   const entries = useFuelStore((s) => s.entries);
   const stats = useFuelStore((s) => s.stats);
@@ -85,27 +84,8 @@ export default function HomeScreen() {
   const lastService = serviceRecords.length > 0 ? serviceRecords[0] : null;
   const kmUntilService = getKmUntilService(selectedVehicle, lastService);
 
-  // Compute this month's total spend (fuel + services + expenses)
-  const now = new Date();
-  const thisMonth = now.getMonth();
-  const thisYear = now.getFullYear();
-
-  const monthlyFuelCost = entries
-    .filter((e) => {
-      const d = new Date(e.date);
-      return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
-    })
-    .reduce((sum, e) => sum + e.total_cost, 0);
-
-  const monthlyServiceCost = serviceRecords
-    .filter((r) => {
-      const d = new Date(r.date);
-      return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
-    })
-    .reduce((sum, r) => sum + (r.cost || 0), 0);
-
-  const monthlyExpenseCost = getMonthlyExpenseTotal(expenses);
-  const monthlyTotal = monthlyFuelCost + monthlyServiceCost + monthlyExpenseCost;
+  // Compute this month's total spend (fuel + service + expense)
+  const { total: monthlyTotal } = getCurrentMonthTotalSpend(entries, serviceRecords, expenses);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -113,43 +93,8 @@ export default function HomeScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Vehicle Switcher ── */}
-        {vehicles.length > 1 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.vehicleSwitcher}
-            contentContainerStyle={styles.vehicleSwitcherContent}
-          >
-            {vehicles.map((v) => (
-              <Pressable
-                key={v.id}
-                onPress={() => selectVehicle(v.id)}
-                style={[
-                  styles.vehicleChip,
-                  {
-                    backgroundColor:
-                      v.id === selectedVehicle.id ? colors.primary : colors.surface,
-                    borderColor:
-                      v.id === selectedVehicle.id ? colors.primary : colors.border,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.vehicleChipText,
-                    {
-                      color:
-                        v.id === selectedVehicle.id ? colors.textOnPrimary : colors.text,
-                    },
-                  ]}
-                >
-                  {v.nickname}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        )}
+        {/* ── Vehicle Context Header ── */}
+        <VehicleContextHeader />
 
         {/* ── Vehicle Header ── */}
         <View style={styles.vehicleHeader}>
@@ -280,6 +225,33 @@ export default function HomeScreen() {
           </View>
         )}
 
+        {/* ── Tyre Pressure Recommendation ── */}
+        {(selectedVehicle.front_tyre_pressure || selectedVehicle.rear_tyre_pressure) && (
+          <View style={[styles.tyrePressureCard, { backgroundColor: colors.surface, ...Sizing.cardShadow }]}>
+            <Text style={[styles.statLabel, { color: colors.textSecondary, marginBottom: Spacing.sm }]}>
+              🚨 Recommended Tyre Pressure
+            </Text>
+            <View style={styles.tyrePressureRow}>
+              {selectedVehicle.front_tyre_pressure != null && (
+                <View style={styles.tyrePressureItem}>
+                  <Text style={[Typography.caption, { color: colors.textTertiary }]}>Front</Text>
+                  <Text style={[Typography.statMedium, { color: colors.text }]}>
+                    {selectedVehicle.front_tyre_pressure} PSI
+                  </Text>
+                </View>
+              )}
+              {selectedVehicle.rear_tyre_pressure != null && (
+                <View style={styles.tyrePressureItem}>
+                  <Text style={[Typography.caption, { color: colors.textTertiary }]}>Rear</Text>
+                  <Text style={[Typography.statMedium, { color: colors.text }]}>
+                    {selectedVehicle.rear_tyre_pressure} PSI
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
         {/* ── Recent Entries ── */}
         {entries.length > 0 && (
           <View style={styles.section}>
@@ -338,27 +310,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: Spacing.lg,
-  },
-  // ── Vehicle Switcher ──
-  vehicleSwitcher: {
-    marginBottom: Spacing.lg,
-    marginHorizontal: -Spacing.lg,
-  },
-  vehicleSwitcherContent: {
-    paddingHorizontal: Spacing.lg,
-    gap: Spacing.sm,
-  },
-  vehicleChip: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: Sizing.radiusFull,
-    borderWidth: 1.5,
-    minHeight: Sizing.touchTarget,
-    justifyContent: 'center',
-  },
-  vehicleChipText: {
-    fontSize: 14,
-    fontWeight: '600',
   },
   // ── Vehicle Header ──
   vehicleHeader: {
@@ -468,5 +419,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: Spacing.lg,
     marginBottom: Spacing.lg,
+  },
+  // ── Tyre Pressure ──
+  tyrePressureCard: {
+    borderRadius: Sizing.radiusMd,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  tyrePressureRow: {
+    flexDirection: 'row',
+    gap: Spacing.xxl,
+  },
+  tyrePressureItem: {
+    alignItems: 'center',
   },
 });

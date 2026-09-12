@@ -23,6 +23,7 @@ import { useDocumentStore } from '@/stores/documentStore';
 import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_ICONS } from '@/constants/documentTypes';
 import { formatDisplayDateLong, daysUntil } from '@/utils/date';
 import type { VehicleDocument } from '@/types/document';
+import { VehicleContextHeader } from '@/components/VehicleContextHeader';
 
 export default function DocumentsScreen() {
   const colors = useThemeColors();
@@ -172,6 +173,9 @@ export default function DocumentsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* ── Vehicle Context ── */}
+      <VehicleContextHeader label="Documents for" />
+
       <FlatList
         data={documents}
         keyExtractor={(item) => item.id}

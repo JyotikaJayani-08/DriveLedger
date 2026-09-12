@@ -51,9 +51,13 @@ import {
   MILEAGE_UNIT_LABELS,
 } from '@/constants/fuelTypes';
 import { todayISO } from '@/utils/date';
+import { displayToISO, isoToDisplay } from '@/utils/dateInput';
 import { formatMileage } from '@/utils/format';
 import { validateFuelEntry, hasWarningsOnly } from '@/engine/validationEngine';
 import { recalculateAllMileage } from '@/engine/mileageEngine';
+import { FormHeader } from '@/components/FormHeader';
+import { NoVehicleState } from '@/components/NoVehicleState';
+import { VehicleContextHeader } from '@/components/VehicleContextHeader';
 import * as fuelRepo from '@/database/repositories/fuelRepo';
 import * as vehicleRepo from '@/database/repositories/vehicleRepo';
 
@@ -84,10 +88,7 @@ export default function AddFuelScreen() {
 
   // Initialize date display
   useEffect(() => {
-    const parts = date.split('-');
-    if (parts.length === 3) {
-      setDateDisplay(`${parts[2]}/${parts[1]}/${parts[0]}`);
-    }
+    setDateDisplay(isoToDisplay(date));
   }, []);
 
   // Load existing entry for edit mode
@@ -96,10 +97,7 @@ export default function AddFuelScreen() {
       const existing = fuelRepo.getFuelEntryById(params.id);
       if (existing) {
         setDate(existing.date);
-        const parts = existing.date.split('-');
-        if (parts.length === 3) {
-          setDateDisplay(`${parts[2]}/${parts[1]}/${parts[0]}`);
-        }
+        setDateDisplay(isoToDisplay(existing.date));
         setOdometer(existing.odometer.toString());
         setFuelAmount(existing.fuel_amount.toString());
         setPricePerUnit(existing.price_per_unit.toString());
@@ -112,39 +110,16 @@ export default function AddFuelScreen() {
   }, [params.id]);
 
   if (!selectedVehicle) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-            <Text style={[Typography.body, { color: colors.primary }]}>Close</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: Spacing.xxl }}>
-          <Text style={{ fontSize: 48, marginBottom: Spacing.lg }}>🚗</Text>
-          <Text style={[Typography.h2, { color: colors.text, textAlign: 'center' }]}>No Vehicle Selected</Text>
-          <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm }]}>
-            Add a vehicle first from the Home or Settings tab.
-          </Text>
-        </View>
-      </View>
-    );
+    return <NoVehicleState />;
   }
 
   const fuelUnit = FUEL_TYPE_TO_DEFAULT_UNIT[selectedVehicle.fuel_type as FuelType];
   const fuelUnitLabel = fuelUnit === FuelUnit.LITRES ? 'L' : fuelUnit === FuelUnit.KG ? 'kg' : 'kWh';
   const isEV = selectedVehicle.fuel_type === FuelType.ELECTRIC;
 
-  const parseDate = (display: string): string | null => {
-    const parts = display.trim().split('/');
-    if (parts.length === 3) {
-      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-    }
-    return null;
-  };
-
   const handleDateChange = (text: string) => {
     setDateDisplay(text);
-    const parsed = parseDate(text);
+    const parsed = displayToISO(text);
     if (parsed) {
       setDate(parsed);
     }
@@ -331,15 +306,10 @@ export default function AddFuelScreen() {
       behavior={Platform.OS === 'android' ? 'height' : 'padding'}
     >
       {/* ── Header ── */}
-      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Text style={[Typography.body, { color: colors.primary }]}>Cancel</Text>
-        </TouchableOpacity>
-        <Text style={[Typography.h3, { color: colors.text }]}>
-          {isEditMode ? 'Edit Fuel' : 'Add Fuel'}
-        </Text>
-        <View style={styles.headerButton} />
-      </View>
+      <FormHeader title={isEditMode ? 'Edit Fuel' : 'Add Fuel'} />
+
+      {/* ── Vehicle Context ── */}
+      <VehicleContextHeader label="Logging for" />
 
       <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false}>
         {/* ── Date ── */}

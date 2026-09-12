@@ -162,6 +162,13 @@ export default function SettingsScreen() {
                 <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>
                   {v.registration_number} · {FUEL_TYPE_LABELS[v.fuel_type as keyof typeof FUEL_TYPE_LABELS] || v.fuel_type}
                 </Text>
+                {(v.front_tyre_pressure || v.rear_tyre_pressure) && (
+                  <Text style={[Typography.caption, { color: colors.textTertiary, marginTop: 2 }]}>
+                    🚨 Tyre: {v.front_tyre_pressure ? `F: ${v.front_tyre_pressure} PSI` : ''}
+                    {v.front_tyre_pressure && v.rear_tyre_pressure ? ' · ' : ''}
+                    {v.rear_tyre_pressure ? `R: ${v.rear_tyre_pressure} PSI` : ''}
+                  </Text>
+                )}
               </View>
               <Text style={[Typography.caption, { color: colors.textTertiary }]}>
                 Tap to archive

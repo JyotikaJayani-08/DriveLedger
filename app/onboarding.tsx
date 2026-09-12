@@ -50,6 +50,10 @@ export default function OnboardingScreen() {
   const [vehicleType, setVehicleType] = useState<VehicleType>(VehicleType.CAR);
   const [fuelType, setFuelType] = useState<FuelType>(FuelType.PETROL);
   const [registration, setRegistration] = useState('');
+  const [frontTyrePressure, setFrontTyrePressure] = useState('');
+  const [rearTyrePressure, setRearTyrePressure] = useState('');
+  const [tankCapacity, setTankCapacity] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [error, setError] = useState('');
 
   const handleSave = () => {
@@ -68,6 +72,9 @@ export default function OnboardingScreen() {
       vehicle_type: vehicleType,
       fuel_type: fuelType,
       registration_number: registration.trim().toUpperCase(),
+      front_tyre_pressure: frontTyrePressure ? parseFloat(frontTyrePressure) : undefined,
+      rear_tyre_pressure: rearTyrePressure ? parseFloat(rearTyrePressure) : undefined,
+      tank_capacity: tankCapacity ? parseFloat(tankCapacity) : undefined,
     });
 
     router.replace('/(tabs)');
@@ -204,6 +211,64 @@ export default function OnboardingScreen() {
             {error}
           </Text>
         ) : null}
+
+        {/* ── Advanced Details Toggle ── */}
+        <TouchableOpacity
+          onPress={() => setShowAdvanced(!showAdvanced)}
+          style={styles.advancedToggle}
+          activeOpacity={0.7}
+        >
+          <Text style={[Typography.bodySmall, { color: colors.primary, fontWeight: '600' }]}>
+            {showAdvanced ? '▲ Hide Details' : '▼ More Details (optional)'}
+          </Text>
+        </TouchableOpacity>
+
+        {showAdvanced && (
+          <View>
+            {/* ── Tank Capacity ── */}
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              Tank Capacity ({fuelType === FuelType.ELECTRIC ? 'kWh' : fuelType === FuelType.CNG || fuelType === FuelType.LPG ? 'kg' : 'litres'})
+            </Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+              placeholder="e.g., 37"
+              placeholderTextColor={colors.textTertiary}
+              value={tankCapacity}
+              onChangeText={setTankCapacity}
+              keyboardType="numeric"
+            />
+
+            {/* ── Tyre Pressure ── */}
+            <Text style={[styles.label, { color: colors.textSecondary }]}>Tyre Pressure (PSI)</Text>
+            <View style={styles.pressureRow}>
+              <View style={styles.pressureField}>
+                <Text style={[styles.pressureFieldLabel, { color: colors.textTertiary }]}>Front</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+                  placeholder="e.g., 32"
+                  placeholderTextColor={colors.textTertiary}
+                  value={frontTyrePressure}
+                  onChangeText={setFrontTyrePressure}
+                  keyboardType="numeric"
+                />
+              </View>
+              <View style={styles.pressureField}>
+                <Text style={[styles.pressureFieldLabel, { color: colors.textTertiary }]}>Rear</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+                  placeholder="e.g., 35"
+                  placeholderTextColor={colors.textTertiary}
+                  value={rearTyrePressure}
+                  onChangeText={setRearTyrePressure}
+                  keyboardType="numeric"
+                />
+              </View>
+            </View>
+            <Text style={[Typography.caption, { color: colors.textTertiary, marginTop: Spacing.xs }]}>
+              Check your tyre sidewall or owner's manual for recommended PSI.
+            </Text>
+          </View>
+        )}
       </ScrollView>
 
       {/* ── Save Button (bottom-anchored for thumb reach) ── */}
@@ -282,6 +347,23 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  advancedToggle: {
+    marginTop: Spacing.xxl,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+  },
+  pressureRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  pressureField: {
+    flex: 1,
+  },
+  pressureFieldLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: Spacing.xs,
   },
   // ── Bottom Bar ──
   bottomBar: {

@@ -33,6 +33,10 @@ import { useThemeColors } from '@/hooks/useThemeColors';
 import { Typography, Spacing, Sizing } from '@/constants/theme';
 import { SERVICE_TEMPLATES } from '@/constants/serviceTemplates';
 import { todayISO } from '@/utils/date';
+import { displayToISO, isoToDisplay } from '@/utils/dateInput';
+import { FormHeader } from '@/components/FormHeader';
+import { NoVehicleState } from '@/components/NoVehicleState';
+import { VehicleContextHeader } from '@/components/VehicleContextHeader';
 import * as serviceRepo from '@/database/repositories/serviceRepo';
 
 export default function AddServiceScreen() {
@@ -58,10 +62,7 @@ export default function AddServiceScreen() {
 
   // Initialize date display
   useEffect(() => {
-    const parts = date.split('-');
-    if (parts.length === 3) {
-      setDateDisplay(`${parts[2]}/${parts[1]}/${parts[0]}`);
-    }
+    setDateDisplay(isoToDisplay(date));
   }, []);
 
   // Load existing record for edit mode
@@ -71,10 +72,7 @@ export default function AddServiceScreen() {
       if (existing) {
         setServiceType(existing.service_type);
         setDate(existing.date);
-        const parts = existing.date.split('-');
-        if (parts.length === 3) {
-          setDateDisplay(`${parts[2]}/${parts[1]}/${parts[0]}`);
-        }
+        setDateDisplay(isoToDisplay(existing.date));
         setCost(existing.cost != null ? existing.cost.toString() : '');
         setOdometer(existing.odometer != null ? existing.odometer.toString() : '');
         setGarageName(existing.garage_name || '');
@@ -85,35 +83,12 @@ export default function AddServiceScreen() {
   }, [params.id]);
 
   if (!selectedVehicle) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-            <Text style={[Typography.body, { color: colors.primary }]}>Close</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: Spacing.xxl }}>
-          <Text style={{ fontSize: 48, marginBottom: Spacing.lg }}>🚗</Text>
-          <Text style={[Typography.h2, { color: colors.text, textAlign: 'center' }]}>No Vehicle Selected</Text>
-          <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm }]}>
-            Add a vehicle first from the Home or Settings tab.
-          </Text>
-        </View>
-      </View>
-    );
+    return <NoVehicleState />;
   }
-
-  const parseDate = (display: string): string | null => {
-    const parts = display.trim().split('/');
-    if (parts.length === 3) {
-      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-    }
-    return null;
-  };
 
   const handleDateChange = (text: string) => {
     setDateDisplay(text);
-    const parsed = parseDate(text);
+    const parsed = displayToISO(text);
     if (parsed) {
       setDate(parsed);
     }
@@ -160,15 +135,10 @@ export default function AddServiceScreen() {
       behavior={Platform.OS === 'android' ? 'height' : 'padding'}
     >
       {/* ── Header ── */}
-      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Text style={[Typography.body, { color: colors.primary }]}>Cancel</Text>
-        </TouchableOpacity>
-        <Text style={[Typography.h3, { color: colors.text }]}>
-          {isEditMode ? 'Edit Service' : 'Log Service'}
-        </Text>
-        <View style={styles.headerButton} />
-      </View>
+      <FormHeader title={isEditMode ? 'Edit Service' : 'Log Service'} />
+
+      {/* ── Vehicle Context ── */}
+      <VehicleContextHeader label="Logging for" />
 
       <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false}>
         {/* ── Date ── */}

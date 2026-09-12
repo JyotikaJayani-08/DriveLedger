@@ -23,6 +23,7 @@ import { formatDisplayDateLong } from '@/utils/date';
 import type { FuelEntry } from '@/types/fuel';
 import type { ServiceRecord } from '@/types/service';
 import type { Expense } from '@/types/expense';
+import { VehicleContextHeader } from '@/components/VehicleContextHeader';
 
 type Tab = 'fuel' | 'service' | 'expenses';
 
@@ -242,6 +243,9 @@ export default function HistoryScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* ── Vehicle Context ── */}
+      <VehicleContextHeader label="History for" />
+
       {/* ── Segmented Tabs ── */}
       <View style={[styles.tabBar, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         {(['fuel', 'service', 'expenses'] as Tab[]).map((t) => (

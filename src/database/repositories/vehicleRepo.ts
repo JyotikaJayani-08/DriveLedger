@@ -49,6 +49,8 @@ export function createVehicle(input: CreateVehicleInput): Vehicle {
     fuel_type: input.fuel_type,
     tank_capacity: input.tank_capacity ?? null,
     current_odometer: input.current_odometer ?? null,
+    front_tyre_pressure: input.front_tyre_pressure ?? null,
+    rear_tyre_pressure: input.rear_tyre_pressure ?? null,
     service_interval_km: input.service_interval_km ?? null,
     purchase_date: input.purchase_date ?? null,
     notes: input.notes ?? null,
@@ -62,13 +64,15 @@ export function createVehicle(input: CreateVehicleInput): Vehicle {
     `INSERT INTO vehicles (
       id, nickname, vehicle_type, manufacturer, model, variant, year, color,
       registration_number, fuel_type, tank_capacity, current_odometer,
+      front_tyre_pressure, rear_tyre_pressure,
       service_interval_km, purchase_date, notes, is_archived, created_at, updated_at, deleted_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       vehicle.id, vehicle.nickname, vehicle.vehicle_type, vehicle.manufacturer,
       vehicle.model, vehicle.variant, vehicle.year, vehicle.color,
       vehicle.registration_number, vehicle.fuel_type, vehicle.tank_capacity,
-      vehicle.current_odometer, vehicle.service_interval_km, vehicle.purchase_date,
+      vehicle.current_odometer, vehicle.front_tyre_pressure, vehicle.rear_tyre_pressure,
+      vehicle.service_interval_km, vehicle.purchase_date,
       vehicle.notes, vehicle.is_archived, vehicle.created_at, vehicle.updated_at,
       vehicle.deleted_at,
     ]

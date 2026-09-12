@@ -33,7 +33,11 @@ import { useThemeColors } from '@/hooks/useThemeColors';
 import { Typography, Spacing, Sizing } from '@/constants/theme';
 import { EXPENSE_CATEGORIES } from '@/constants/expenseCategories';
 import { todayISO } from '@/utils/date';
+import { displayToISO, isoToDisplay } from '@/utils/dateInput';
 import { validateExpense } from '@/engine/validationEngine';
+import { FormHeader } from '@/components/FormHeader';
+import { NoVehicleState } from '@/components/NoVehicleState';
+import { VehicleContextHeader } from '@/components/VehicleContextHeader';
 import * as expenseRepo from '@/database/repositories/expenseRepo';
 
 export default function AddExpenseScreen() {
@@ -56,10 +60,7 @@ export default function AddExpenseScreen() {
 
   // Initialize date display
   useEffect(() => {
-    const parts = date.split('-');
-    if (parts.length === 3) {
-      setDateDisplay(`${parts[2]}/${parts[1]}/${parts[0]}`);
-    }
+    setDateDisplay(isoToDisplay(date));
   }, []);
 
   // Load existing expense for edit mode
@@ -71,44 +72,18 @@ export default function AddExpenseScreen() {
         setAmount(existing.amount.toString());
         setDescription(existing.description || '');
         setDate(existing.date);
-        const parts = existing.date.split('-');
-        if (parts.length === 3) {
-          setDateDisplay(`${parts[2]}/${parts[1]}/${parts[0]}`);
-        }
+        setDateDisplay(isoToDisplay(existing.date));
       }
     }
   }, [params.id]);
 
   if (!selectedVehicle) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-            <Text style={[Typography.body, { color: colors.primary }]}>Close</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: Spacing.xxl }}>
-          <Text style={{ fontSize: 48, marginBottom: Spacing.lg }}>🚗</Text>
-          <Text style={[Typography.h2, { color: colors.text, textAlign: 'center' }]}>No Vehicle Selected</Text>
-          <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm }]}>
-            Add a vehicle first from the Home or Settings tab.
-          </Text>
-        </View>
-      </View>
-    );
+    return <NoVehicleState />;
   }
-
-  const parseDate = (display: string): string | null => {
-    const parts = display.trim().split('/');
-    if (parts.length === 3) {
-      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-    }
-    return null;
-  };
 
   const handleDateChange = (text: string) => {
     setDateDisplay(text);
-    const parsed = parseDate(text);
+    const parsed = displayToISO(text);
     if (parsed) {
       setDate(parsed);
     }
@@ -161,15 +136,10 @@ export default function AddExpenseScreen() {
       behavior={Platform.OS === 'android' ? 'height' : 'padding'}
     >
       {/* ── Header ── */}
-      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Text style={[Typography.body, { color: colors.primary }]}>Cancel</Text>
-        </TouchableOpacity>
-        <Text style={[Typography.h3, { color: colors.text }]}>
-          {isEditMode ? 'Edit Expense' : 'Add Expense'}
-        </Text>
-        <View style={styles.headerButton} />
-      </View>
+      <FormHeader title={isEditMode ? 'Edit Expense' : 'Add Expense'} />
+
+      {/* ── Vehicle Context ── */}
+      <VehicleContextHeader label="Logging for" />
 
       <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false}>
         {/* ── Date ── */}

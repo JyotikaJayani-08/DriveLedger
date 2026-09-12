@@ -64,6 +64,12 @@ export interface Vehicle {
    */
   current_odometer: number | null;
 
+  /** Recommended front tyre pressure in PSI */
+  front_tyre_pressure: number | null;
+
+  /** Recommended rear tyre pressure in PSI */
+  rear_tyre_pressure: number | null;
+
   /**
    * Recommended service interval in km.
    * Used at runtime to compute km-until-next-service with current_odometer.
@@ -117,6 +123,8 @@ export interface CreateVehicleInput {
   color?: string;
   tank_capacity?: number;
   current_odometer?: number;
+  front_tyre_pressure?: number;
+  rear_tyre_pressure?: number;
   service_interval_km?: number;
   purchase_date?: string;
   notes?: string;

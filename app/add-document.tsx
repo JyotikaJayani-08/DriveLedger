@@ -33,6 +33,10 @@ import { useDocumentStore } from '@/stores/documentStore';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { Typography, Spacing, Sizing } from '@/constants/theme';
 import { DocumentType, DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_LIST, DOCUMENT_TYPE_ICONS } from '@/constants/documentTypes';
+import { displayToISO, isoToDisplay } from '@/utils/dateInput';
+import { FormHeader } from '@/components/FormHeader';
+import { NoVehicleState } from '@/components/NoVehicleState';
+import { VehicleContextHeader } from '@/components/VehicleContextHeader';
 import * as documentRepo from '@/database/repositories/documentRepo';
 
 export default function AddDocumentScreen() {
@@ -68,16 +72,10 @@ export default function AddDocumentScreen() {
         setNotes(existing.notes || '');
         setPhotoUri(existing.file_uri || null);
         if (existing.issue_date) {
-          const parts = existing.issue_date.split('-');
-          if (parts.length === 3) {
-            setIssueDate(`${parts[2]}/${parts[1]}/${parts[0]}`);
-          }
+          setIssueDate(isoToDisplay(existing.issue_date));
         }
         if (existing.expiry_date) {
-          const parts = existing.expiry_date.split('-');
-          if (parts.length === 3) {
-            setExpiryDate(`${parts[2]}/${parts[1]}/${parts[0]}`);
-          }
+          setExpiryDate(isoToDisplay(existing.expiry_date));
         }
       }
     }
@@ -91,22 +89,7 @@ export default function AddDocumentScreen() {
   }, [params.renewType]);
 
   if (!selectedVehicle) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-            <Text style={[Typography.body, { color: colors.primary }]}>Close</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: Spacing.xxl }}>
-          <Text style={{ fontSize: 48, marginBottom: Spacing.lg }}>🚗</Text>
-          <Text style={[Typography.h2, { color: colors.text, textAlign: 'center' }]}>No Vehicle Selected</Text>
-          <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm }]}>
-            Add a vehicle first from the Home or Settings tab.
-          </Text>
-        </View>
-      </View>
-    );
+    return <NoVehicleState />;
   }
 
   const pickImage = async () => {
@@ -154,11 +137,7 @@ export default function AddDocumentScreen() {
 
   const parseDateInput = (display: string): string | undefined => {
     if (!display.trim()) return undefined;
-    const parts = display.trim().split('/');
-    if (parts.length === 3) {
-      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-    }
-    return display.trim();
+    return displayToISO(display) ?? display.trim();
   };
 
   const handleSave = () => {
@@ -226,15 +205,10 @@ export default function AddDocumentScreen() {
       behavior={Platform.OS === 'android' ? 'height' : 'padding'}
     >
       {/* ── Header ── */}
-      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Text style={[Typography.body, { color: colors.primary }]}>Cancel</Text>
-        </TouchableOpacity>
-        <Text style={[Typography.h3, { color: colors.text }]}>
-          {headerTitle}
-        </Text>
-        <View style={styles.headerButton} />
-      </View>
+      <FormHeader title={headerTitle} />
+
+      {/* ── Vehicle Context ── */}
+      <VehicleContextHeader label="For" />
 
       <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false}>
         {/* ── Renewal Banner ── */}
