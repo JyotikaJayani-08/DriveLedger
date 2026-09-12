@@ -1,11 +1,11 @@
-import { Alert, Linking } from 'react-native';
-import Constants from 'expo-constants';
-import * as WebBrowser from 'expo-web-browser';
 import {
   GITHUB_REPO,
   GitHubRelease,
   parseGitHubRelease,
 } from '@/utils/releaseParser';
+import Constants from 'expo-constants';
+import * as WebBrowser from 'expo-web-browser';
+import { Alert, Linking } from 'react-native';
 
 export { GITHUB_REPO, GitHubRelease, parseGitHubRelease };
 
@@ -14,13 +14,19 @@ export { GITHUB_REPO, GitHubRelease, parseGitHubRelease };
  */
 export function showDataSafetyGuide() {
   Alert.alert(
-    '🛡️ Update & Data Safety Rules',
-    `Rule 1: NEVER UNINSTALL FIRST\n` +
-      `When you download a new APK, DO NOT uninstall your current app. Simply open the new APK and tap "Update". Android preserves all your offline vehicle data, fuel logs, and service records.\n\n` +
-      `Rule 2: EXPORT A BACKUP ANYTIME\n` +
-      `All DriveLedger data is stored 100% offline on your device. You can tap "Export Backup" above in Settings anytime to save a JSON copy to your Google Drive or Files.\n\n` +
-      `Rule 3: USE OFFICIAL RELEASES\n` +
-      `Always download APKs from your official GitHub Releases page to ensure matching security signatures.`,
+    '🛡️ Update & Data Safety Guide',
+    `1. NEVER UNINSTALL BEFORE UPDATING\n` +
+    `• DO NOT delete your current app.\n` +
+    `• Open the downloaded APK and tap "Update".\n` +
+    `• Android preserves all offline vehicle logs, fuel records, and history automatically.\n\n` +
+
+    `2. BACK UP YOUR DATA\n` +
+    `• DriveLedger is 100% offline—data lives only on your device.\n` +
+    `• Go to Settings > "Export Backup" to save a JSON copy to Google Drive or Files.\n\n` +
+
+    `3. USE OFFICIAL BUILDS ONLY\n` +
+    `• Install only from official GitHub Releases.\n` +
+    `• Third-party builds will fail to install due to signature mismatches and can risk data loss.`,
     [{ text: 'Understood 👍' }]
   );
 }
@@ -41,8 +47,8 @@ export async function checkForAppUpdate(options?: {
       Alert.alert(
         'GitHub Repo Not Configured',
         `Current app version: v${currentVersion}\n\n` +
-          `To connect with your GitHub Releases, set your "owner/repo" in src/utils/releaseParser.ts.\n\n` +
-          `Whenever you publish a release on GitHub, users can check for updates with one tap.`,
+        `To connect with your GitHub Releases, set your "owner/repo" in src/utils/releaseParser.ts.\n\n` +
+        `Whenever you publish a release on GitHub, users can check for updates with one tap.`,
         [
           { text: 'Safety Rules', onPress: showDataSafetyGuide },
           { text: 'OK', style: 'cancel' },
@@ -64,7 +70,7 @@ export async function checkForAppUpdate(options?: {
       if (isManual) {
         Alert.alert(
           'No Releases Yet',
-          `No public releases found on GitHub for ${repo}.\n\nCurrent version: v${currentVersion}`
+          `No public releases found on GitHub for DriveLedger.\n\nCurrent version: v${currentVersion}`
         );
       }
       return false;
@@ -81,9 +87,9 @@ export async function checkForAppUpdate(options?: {
       Alert.alert(
         `Update Available (v${result.version})`,
         `${result.releaseNotes}\n\n` +
-          `🛡️ TWO SAFETY RULES:\n` +
-          `1. DO NOT uninstall your current app! Tap 'Download APK' and install over this version to keep all your records.\n` +
-          `2. Tap 'Export Backup' in Settings anytime if you want an extra copy of your data.`,
+        `🛡️ TWO SAFETY RULES:\n` +
+        `1. DO NOT uninstall your current app! Tap 'Download APK' and install over this version to keep all your records.\n` +
+        `2. Tap 'Export Backup' in Settings anytime if you want an extra copy of your data.`,
         [
           { text: 'Later', style: 'cancel' },
           {

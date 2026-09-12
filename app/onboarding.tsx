@@ -34,7 +34,20 @@ import {
   VehicleType,
   FUEL_TYPE_LABELS,
   VEHICLE_TYPE_LABELS,
+  isHybridFuel,
+  isElectricFuel,
+  getTankCapacityLabel,
+  getSecondaryTankLabel,
 } from '@/constants/fuelTypes';
+
+// Fuel types grouped for readability
+const SINGLE_FUEL_TYPES = [FuelType.PETROL, FuelType.DIESEL, FuelType.CNG, FuelType.LPG, FuelType.ELECTRIC];
+const HYBRID_FUEL_TYPES = [
+  FuelType.HYBRID_CNG_PETROL,
+  FuelType.HYBRID_CNG_DIESEL,
+  FuelType.HYBRID_LPG_PETROL,
+  FuelType.HYBRID_LPG_DIESEL,
+];
 
 type Step = 'welcome' | 'form';
 
@@ -53,8 +66,18 @@ export default function OnboardingScreen() {
   const [frontTyrePressure, setFrontTyrePressure] = useState('');
   const [rearTyrePressure, setRearTyrePressure] = useState('');
   const [tankCapacity, setTankCapacity] = useState('');
+  const [secondaryTankCapacity, setSecondaryTankCapacity] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [error, setError] = useState('');
+
+  const isEV = isElectricFuel(fuelType);
+  const isHybrid = isHybridFuel(fuelType);
+
+  const handleFuelTypeChange = (ft: FuelType) => {
+    setFuelType(ft);
+    setTankCapacity('');
+    setSecondaryTankCapacity('');
+  };
 
   const handleSave = () => {
     if (!nickname.trim()) {
@@ -75,6 +98,9 @@ export default function OnboardingScreen() {
       front_tyre_pressure: frontTyrePressure ? parseFloat(frontTyrePressure) : undefined,
       rear_tyre_pressure: rearTyrePressure ? parseFloat(rearTyrePressure) : undefined,
       tank_capacity: tankCapacity ? parseFloat(tankCapacity) : undefined,
+      secondary_tank_capacity: (isHybrid && secondaryTankCapacity)
+        ? parseFloat(secondaryTankCapacity)
+        : undefined,
     });
 
     router.replace('/(tabs)');
@@ -167,13 +193,13 @@ export default function OnboardingScreen() {
           ))}
         </View>
 
-        {/* ── Fuel Type ── */}
+        {/* ── Fuel Type: Single Fuels ── */}
         <Text style={[styles.label, { color: colors.textSecondary }]}>Fuel Type *</Text>
         <View style={styles.chipRow}>
-          {Object.values(FuelType).map((ft) => (
+          {SINGLE_FUEL_TYPES.map((ft) => (
             <Pressable
               key={ft}
-              onPress={() => setFuelType(ft)}
+              onPress={() => handleFuelTypeChange(ft)}
               style={[
                 styles.chip,
                 {
@@ -186,6 +212,33 @@ export default function OnboardingScreen() {
                 style={[
                   styles.chipText,
                   { color: fuelType === ft ? '#1A1C1E' : colors.text },
+                ]}
+              >
+                {FUEL_TYPE_LABELS[ft]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {/* ── Dual-Fuel (Hybrid) Types ── */}
+        <Text style={[styles.subLabel, { color: colors.textTertiary }]}>Dual-Fuel (Hybrid)</Text>
+        <View style={styles.chipRow}>
+          {HYBRID_FUEL_TYPES.map((ft) => (
+            <Pressable
+              key={ft}
+              onPress={() => handleFuelTypeChange(ft)}
+              style={[
+                styles.chip,
+                {
+                  backgroundColor: fuelType === ft ? colors.success : colors.surface,
+                  borderColor: fuelType === ft ? colors.success : colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  { color: fuelType === ft ? '#FFFFFF' : colors.text },
                 ]}
               >
                 {FUEL_TYPE_LABELS[ft]}
@@ -225,21 +278,13 @@ export default function OnboardingScreen() {
 
         {showAdvanced && (
           <View>
-            {/* ── Tank Capacity ── */}
-            <Text style={[styles.label, { color: colors.textSecondary }]}>
-              Tank Capacity ({fuelType === FuelType.ELECTRIC ? 'kWh' : fuelType === FuelType.CNG || fuelType === FuelType.LPG ? 'kg' : 'litres'})
-            </Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-              placeholder="e.g., 37"
-              placeholderTextColor={colors.textTertiary}
-              value={tankCapacity}
-              onChangeText={setTankCapacity}
-              keyboardType="numeric"
-            />
-
             {/* ── Tyre Pressure ── */}
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Tyre Pressure (PSI)</Text>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              Recommended Tyre Pressure (PSI)
+            </Text>
+            <Text style={[Typography.caption, { color: colors.textTertiary, marginBottom: Spacing.sm }]}>
+              Check your tyre sidewall or owner's manual.
+            </Text>
             <View style={styles.pressureRow}>
               <View style={styles.pressureField}>
                 <Text style={[styles.pressureFieldLabel, { color: colors.textTertiary }]}>Front</Text>
@@ -264,9 +309,44 @@ export default function OnboardingScreen() {
                 />
               </View>
             </View>
-            <Text style={[Typography.caption, { color: colors.textTertiary, marginTop: Spacing.xs }]}>
-              Check your tyre sidewall or owner's manual for recommended PSI.
+
+            {/* ── Primary Tank / Battery ── */}
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              {getTankCapacityLabel(fuelType)}
             </Text>
+            {isEV && (
+              <Text style={[Typography.caption, { color: colors.textTertiary, marginBottom: Spacing.sm }]}>
+                ⚡ Electric vehicles don't have a fuel tank — enter your battery pack capacity in kWh.
+              </Text>
+            )}
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+              placeholder={isEV ? 'e.g., 40.5 kWh' : isHybrid ? 'e.g., 8 kg' : 'e.g., 37 litres'}
+              placeholderTextColor={colors.textTertiary}
+              value={tankCapacity}
+              onChangeText={setTankCapacity}
+              keyboardType="numeric"
+            />
+
+            {/* ── Secondary Tank (Hybrid only) ── */}
+            {isHybrid && (
+              <>
+                <Text style={[styles.label, { color: colors.textSecondary }]}>
+                  {getSecondaryTankLabel(fuelType)}
+                </Text>
+                <Text style={[Typography.caption, { color: colors.textTertiary, marginBottom: Spacing.sm }]}>
+                  🔁 Dual-fuel vehicle — your liquid fallback tank capacity.
+                </Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+                  placeholder="e.g., 35 litres"
+                  placeholderTextColor={colors.textTertiary}
+                  value={secondaryTankCapacity}
+                  onChangeText={setSecondaryTankCapacity}
+                  keyboardType="numeric"
+                />
+              </>
+            )}
           </View>
         )}
       </ScrollView>
@@ -347,6 +427,14 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  subLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: Spacing.sm,
+    marginTop: Spacing.md,
   },
   advancedToggle: {
     marginTop: Spacing.xxl,

@@ -9,10 +9,11 @@
  * - The Stack navigator that wraps the tab layout
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
 import { getDatabase } from '@/database/connection';
 import { useVehicleStore } from '@/stores/vehicleStore';
 import {
@@ -20,20 +21,35 @@ import {
   scheduleExpiryNotifications,
 } from '@/services/notificationService';
 
+// Keep the splash screen visible while assets & initial state load
+SplashScreen.preventAutoHideAsync();
+
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const loadVehicles = useVehicleStore((s) => s.loadVehicles);
   const vehicles = useVehicleStore((s) => s.vehicles);
+  const [appIsReady, setAppIsReady] = useState(false);
 
   useEffect(() => {
-    // Initialize database (creates tables if they don't exist)
-    getDatabase();
+    async function prepare() {
+      try {
+        // Initialize database (creates tables if they don't exist)
+        getDatabase();
 
-    // Load vehicles into state
-    loadVehicles();
+        // Load vehicles into state
+        loadVehicles();
 
-    // Set up notification channel (Android)
-    setupNotificationChannel();
+        // Set up notification channel (Android)
+        setupNotificationChannel();
+      } catch (e) {
+        console.warn('App initialization warning:', e);
+      } finally {
+        setAppIsReady(true);
+        await SplashScreen.hideAsync();
+      }
+    }
+
+    prepare();
   }, []);
 
   // Schedule expiry notifications whenever vehicles list changes

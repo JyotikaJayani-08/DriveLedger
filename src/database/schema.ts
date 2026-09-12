@@ -46,8 +46,13 @@ const CREATE_VEHICLES_TABLE = `
     year                 INTEGER,
     color                TEXT,
     registration_number  TEXT NOT NULL,
-    fuel_type            TEXT NOT NULL CHECK (fuel_type IN ('petrol', 'diesel', 'cng', 'lpg', 'electric', 'hybrid')),
+    fuel_type            TEXT NOT NULL CHECK (fuel_type IN (
+                           'petrol', 'diesel', 'cng', 'lpg', 'electric',
+                           'hybrid_cng_petrol', 'hybrid_cng_diesel',
+                           'hybrid_lpg_petrol', 'hybrid_lpg_diesel'
+                         )),
     tank_capacity        REAL,
+    secondary_tank_capacity REAL,
     current_odometer     REAL,
     front_tyre_pressure  REAL,
     rear_tyre_pressure   REAL,
@@ -177,4 +182,17 @@ export function createTables(db: SQLite.SQLiteDatabase): void {
   db.execSync(CREATE_EXPENSES_TABLE);
   db.execSync(CREATE_DOCUMENTS_TABLE);
   db.execSync(CREATE_INDEXES);
+
+  // ── Migrations ──────────────────────────────────────────────────
+  // ADD COLUMN migrations are idempotent (SQLite ignores if column already exists
+  // via try/catch). Each migration targets a specific schema version bump.
+
+  // v1.1 — Dual-tank support for hybrid vehicles
+  try {
+    db.execSync(
+      `ALTER TABLE vehicles ADD COLUMN secondary_tank_capacity REAL`
+    );
+  } catch {
+    // Column already exists on fresh installs — safe to ignore
+  }
 }

@@ -55,8 +55,21 @@ export interface Vehicle {
    */
   fuel_type: FuelType;
 
-  /** Tank capacity in litres (or kg for CNG). Optional advanced detail. */
+  /**
+   * Primary tank/battery capacity.
+   * - Petrol/Diesel: litres
+   * - CNG/LPG: kg
+   * - Electric: kWh
+   * - Hybrid: kg (CNG or LPG primary tank)
+   */
   tank_capacity: number | null;
+
+  /**
+   * Secondary tank capacity for dual-fuel hybrid vehicles only (litres).
+   * Petrol or Diesel liquid tank alongside a CNG/LPG gas tank.
+   * null for all non-hybrid vehicle types.
+   */
+  secondary_tank_capacity: number | null;
 
   /**
    * Denormalized for performance — updated atomically with each fuel entry save.
@@ -122,6 +135,7 @@ export interface CreateVehicleInput {
   year?: number;
   color?: string;
   tank_capacity?: number;
+  secondary_tank_capacity?: number;
   current_odometer?: number;
   front_tyre_pressure?: number;
   rear_tyre_pressure?: number;

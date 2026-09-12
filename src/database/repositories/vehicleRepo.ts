@@ -48,6 +48,7 @@ export function createVehicle(input: CreateVehicleInput): Vehicle {
     registration_number: input.registration_number,
     fuel_type: input.fuel_type,
     tank_capacity: input.tank_capacity ?? null,
+    secondary_tank_capacity: input.secondary_tank_capacity ?? null,
     current_odometer: input.current_odometer ?? null,
     front_tyre_pressure: input.front_tyre_pressure ?? null,
     rear_tyre_pressure: input.rear_tyre_pressure ?? null,
@@ -63,15 +64,16 @@ export function createVehicle(input: CreateVehicleInput): Vehicle {
   db.runSync(
     `INSERT INTO vehicles (
       id, nickname, vehicle_type, manufacturer, model, variant, year, color,
-      registration_number, fuel_type, tank_capacity, current_odometer,
-      front_tyre_pressure, rear_tyre_pressure,
+      registration_number, fuel_type, tank_capacity, secondary_tank_capacity,
+      current_odometer, front_tyre_pressure, rear_tyre_pressure,
       service_interval_km, purchase_date, notes, is_archived, created_at, updated_at, deleted_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       vehicle.id, vehicle.nickname, vehicle.vehicle_type, vehicle.manufacturer,
       vehicle.model, vehicle.variant, vehicle.year, vehicle.color,
       vehicle.registration_number, vehicle.fuel_type, vehicle.tank_capacity,
-      vehicle.current_odometer, vehicle.front_tyre_pressure, vehicle.rear_tyre_pressure,
+      vehicle.secondary_tank_capacity, vehicle.current_odometer,
+      vehicle.front_tyre_pressure, vehicle.rear_tyre_pressure,
       vehicle.service_interval_km, vehicle.purchase_date,
       vehicle.notes, vehicle.is_archived, vehicle.created_at, vehicle.updated_at,
       vehicle.deleted_at,
