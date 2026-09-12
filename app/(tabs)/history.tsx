@@ -223,10 +223,10 @@ export default function HistoryScreen() {
       <Text style={[Typography.h3, { color: colors.text }]}>No {type} entries yet</Text>
       <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginTop: Spacing.sm, textAlign: 'center' }]}>
         {type === 'fuel'
-          ? 'Tap the ⛽ Add Fuel button on the Home screen.'
+          ? 'Tap ⛽ Add Fuel on the Home screen to record a refill.'
           : type === 'service'
-          ? 'Tap the 🔧 button below to log a service.'
-          : 'Tap the 💰 button below to log an expense.'}
+          ? "Tap 🔧 below to record your vehicle's latest maintenance or workshop visit."
+          : 'Tap 💰 below to record non-fuel costs like tolls, parking, or insurance.'}
       </Text>
     </View>
   );
@@ -309,7 +309,7 @@ export default function HistoryScreen() {
           onPress={() => router.push('/add-service')}
         >
           <Text style={styles.fabIcon}>🔧</Text>
-          <Text style={[styles.fabText, { color: colors.textOnPrimary }]}>Add Service</Text>
+          <Text style={[styles.fabText, { color: colors.textOnPrimary }]}>Record Maintenance</Text>
         </TouchableOpacity>
       )}
       {tab === 'expenses' && (
@@ -319,7 +319,7 @@ export default function HistoryScreen() {
           onPress={() => router.push('/add-expense')}
         >
           <Text style={styles.fabIcon}>💰</Text>
-          <Text style={[styles.fabText, { color: '#1A1C1E' }]}>Add Expense</Text>
+          <Text style={[styles.fabText, { color: '#1A1C1E' }]}>Track Running Cost</Text>
         </TouchableOpacity>
       )}
     </View>

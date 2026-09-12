@@ -309,7 +309,7 @@ export default function AddFuelScreen() {
       <FormHeader title={isEditMode ? 'Edit Fuel' : 'Add Fuel'} />
 
       {/* ── Vehicle Context ── */}
-      <VehicleContextHeader label="Logging for" />
+      <VehicleContextHeader label="Recording for" />
 
       <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false}>
         {/* ── Date ── */}

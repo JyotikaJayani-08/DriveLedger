@@ -204,18 +204,18 @@ export default function SettingsScreen() {
           />
 
           {/* ── Quick Actions ── */}
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Quick Add</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Quick Actions</Text>
           <SettingsRow
             emoji="🔧"
-            title="Log a Service"
-            subtitle="Oil change, tyre rotation, etc."
+            title="Record Maintenance"
+            subtitle="Oil changes, tyre rotations, parts replacement & tune-ups"
             colors={colors}
             onPress={() => router.push('/add-service')}
           />
           <SettingsRow
             emoji="💰"
-            title="Log an Expense"
-            subtitle="Insurance, repair, toll, etc."
+            title="Track Running Cost"
+            subtitle="Tolls, parking, insurance, washes & accessories"
             colors={colors}
             onPress={() => router.push('/add-expense')}
           />

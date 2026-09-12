@@ -135,10 +135,10 @@ export default function AddServiceScreen() {
       behavior={Platform.OS === 'android' ? 'height' : 'padding'}
     >
       {/* ── Header ── */}
-      <FormHeader title={isEditMode ? 'Edit Service' : 'Log Service'} />
+      <FormHeader title={isEditMode ? 'Edit Maintenance' : 'Record Maintenance'} />
 
       {/* ── Vehicle Context ── */}
-      <VehicleContextHeader label="Logging for" />
+      <VehicleContextHeader label="Recording for" />
 
       <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false}>
         {/* ── Date ── */}
@@ -260,7 +260,7 @@ export default function AddServiceScreen() {
           activeOpacity={0.85}
         >
           <Text style={[Typography.button, { color: colors.textOnPrimary }]}>
-            {isEditMode ? 'Update Service ✏️' : 'Save Service Record 🔧'}
+            {isEditMode ? 'Update Maintenance ✏️' : 'Save Maintenance Record 🔧'}
           </Text>
         </TouchableOpacity>
       </View>

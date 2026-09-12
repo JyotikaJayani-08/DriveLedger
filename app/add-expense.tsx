@@ -136,10 +136,10 @@ export default function AddExpenseScreen() {
       behavior={Platform.OS === 'android' ? 'height' : 'padding'}
     >
       {/* ── Header ── */}
-      <FormHeader title={isEditMode ? 'Edit Expense' : 'Add Expense'} />
+      <FormHeader title={isEditMode ? 'Edit Running Cost' : 'Track Running Cost'} />
 
       {/* ── Vehicle Context ── */}
-      <VehicleContextHeader label="Logging for" />
+      <VehicleContextHeader label="Recording for" />
 
       <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false}>
         {/* ── Date ── */}
@@ -196,7 +196,7 @@ export default function AddExpenseScreen() {
         <Text style={[styles.label, { color: colors.textSecondary }]}>Description</Text>
         <TextInput
           style={[styles.input, styles.inputMultiline, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-          placeholder="What was this expense for?"
+          placeholder="What was this cost for? (e.g., toll, parking, wash)"
           placeholderTextColor={colors.textTertiary}
           value={description}
           onChangeText={setDescription}
@@ -221,7 +221,7 @@ export default function AddExpenseScreen() {
           activeOpacity={0.85}
         >
           <Text style={[Typography.button, { color: colors.textOnPrimary }]}>
-            {isEditMode ? 'Update Expense ✏️' : 'Save Expense 💰'}
+            {isEditMode ? 'Update Running Cost ✏️' : 'Save Running Cost 💰'}
           </Text>
         </TouchableOpacity>
       </View>
