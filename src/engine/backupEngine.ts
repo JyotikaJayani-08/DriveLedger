@@ -138,24 +138,40 @@ export function backupToJSON(backup: BackupData): string {
 // ─── Import ─────────────────────────────────────────────────────────
 
 /**
- * Validates that a parsed JSON object has the correct backup structure.
+ * Validates that a parsed JSON object has a usable backup structure,
+ * normalizing it to standard BackupData format if needed.
  */
-function validateBackupStructure(data: unknown): data is BackupData {
-  if (!data || typeof data !== 'object') return false;
-  const obj = data as Record<string, unknown>;
+function normalizeAndValidateBackup(parsed: unknown): BackupData | null {
+  if (!parsed || typeof parsed !== 'object') return null;
+  const obj = parsed as Record<string, unknown>;
 
-  if (typeof obj.version !== 'number') return false;
-  if (typeof obj.created_at !== 'string') return false;
-  if (!obj.data || typeof obj.data !== 'object') return false;
+  // Check if it is wrapped in { version, data: { ... } } or raw tables { vehicles, ... }
+  let rawData: Record<string, unknown>;
 
-  const backupData = obj.data as Record<string, unknown>;
-  if (!Array.isArray(backupData.vehicles)) return false;
-  if (!Array.isArray(backupData.fuel_entries)) return false;
-  if (!Array.isArray(backupData.service_records)) return false;
-  if (!Array.isArray(backupData.expenses)) return false;
-  if (!Array.isArray(backupData.documents)) return false;
+  if (obj.data && typeof obj.data === 'object') {
+    rawData = obj.data as Record<string, unknown>;
+  } else if (Array.isArray(obj.vehicles)) {
+    // Tolerant mode: raw table payload pasted directly
+    rawData = obj;
+  } else {
+    return null;
+  }
 
-  return true;
+  // Vehicles array is mandatory for a valid backup
+  if (!Array.isArray(rawData.vehicles)) return null;
+
+  return {
+    version: typeof obj.version === 'number' ? obj.version : 1,
+    created_at: typeof obj.created_at === 'string' ? obj.created_at : nowISO(),
+    app_version: typeof obj.app_version === 'string' ? obj.app_version : '1.0.0',
+    data: {
+      vehicles: rawData.vehicles as Vehicle[],
+      fuel_entries: Array.isArray(rawData.fuel_entries) ? (rawData.fuel_entries as FuelEntry[]) : [],
+      service_records: Array.isArray(rawData.service_records) ? (rawData.service_records as ServiceRecord[]) : [],
+      expenses: Array.isArray(rawData.expenses) ? (rawData.expenses as Expense[]) : [],
+      documents: Array.isArray(rawData.documents) ? (rawData.documents as VehicleDocument[]) : [],
+    },
+  };
 }
 
 /**
@@ -170,12 +186,15 @@ function validateBackupStructure(data: unknown): data is BackupData {
 export function restoreFromJSON(jsonString: string): RestoreResult {
   try {
     const parsed = JSON.parse(jsonString);
+    const backup = normalizeAndValidateBackup(parsed);
 
-    if (!validateBackupStructure(parsed)) {
-      return { success: false, message: 'Invalid backup file format.' };
+    if (!backup) {
+      return {
+        success: false,
+        message: 'Invalid backup file format. Expected vehicle records and backup structure.',
+      };
     }
 
-    const backup = parsed as BackupData;
     const db = getDatabase();
 
     // Atomic restore: if ANY insert fails, ALL changes are rolled back.
@@ -193,14 +212,43 @@ export function restoreFromJSON(jsonString: string): RestoreResult {
 
       // Insert vehicles
       for (const v of backup.data.vehicles) {
+        // Map legacy 'hybrid' to valid constraint value
+        let fuelType = v.fuel_type as string;
+        if (fuelType === 'hybrid') {
+          fuelType = 'hybrid_cng_petrol';
+        }
+
         db.runSync(
-          `INSERT INTO vehicles (id, nickname, vehicle_type, manufacturer, model, variant, year, color,
-           registration_number, fuel_type, tank_capacity, current_odometer,
-           service_interval_km, purchase_date, notes, is_archived, created_at, updated_at, deleted_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [v.id, v.nickname, v.vehicle_type, v.manufacturer, v.model, v.variant, v.year, v.color,
-           v.registration_number, v.fuel_type, v.tank_capacity, v.current_odometer,
-           v.service_interval_km, v.purchase_date, v.notes, v.is_archived, v.created_at, v.updated_at, v.deleted_at]
+          `INSERT OR IGNORE INTO vehicles (
+             id, nickname, vehicle_type, manufacturer, model, variant, year, color,
+             registration_number, fuel_type, tank_capacity, secondary_tank_capacity,
+             current_odometer, front_tyre_pressure, rear_tyre_pressure,
+             service_interval_km, purchase_date, notes, is_archived, created_at, updated_at, deleted_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            v.id,
+            v.nickname,
+            v.vehicle_type,
+            v.manufacturer ?? null,
+            v.model ?? null,
+            v.variant ?? null,
+            v.year ?? null,
+            v.color ?? null,
+            v.registration_number,
+            fuelType,
+            v.tank_capacity ?? null,
+            v.secondary_tank_capacity ?? null,
+            v.current_odometer ?? null,
+            v.front_tyre_pressure ?? null,
+            v.rear_tyre_pressure ?? null,
+            v.service_interval_km ?? null,
+            v.purchase_date ?? null,
+            v.notes ?? null,
+            v.is_archived ?? 0,
+            v.created_at || nowISO(),
+            v.updated_at || nowISO(),
+            v.deleted_at ?? null,
+          ]
         );
       }
 
@@ -211,9 +259,25 @@ export function restoreFromJSON(jsonString: string): RestoreResult {
            total_cost, fuel_station, is_full_tank, calculated_mileage, mileage_unit,
            receipt_photo_uri, notes, created_at, updated_at, deleted_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [f.id, f.vehicle_id, f.date, f.odometer, f.fuel_amount, f.fuel_unit, f.price_per_unit,
-           f.total_cost, f.fuel_station, f.is_full_tank, f.calculated_mileage, f.mileage_unit,
-           f.receipt_photo_uri, f.notes, f.created_at, f.updated_at, f.deleted_at]
+          [
+            f.id,
+            f.vehicle_id,
+            f.date,
+            f.odometer,
+            f.fuel_amount,
+            f.fuel_unit,
+            f.price_per_unit,
+            f.total_cost,
+            f.fuel_station ?? null,
+            f.is_full_tank ?? 1,
+            f.calculated_mileage ?? null,
+            f.mileage_unit ?? null,
+            f.receipt_photo_uri ?? null,
+            f.notes ?? null,
+            f.created_at || nowISO(),
+            f.updated_at || nowISO(),
+            f.deleted_at ?? null,
+          ]
         );
       }
 
@@ -223,8 +287,22 @@ export function restoreFromJSON(jsonString: string): RestoreResult {
           `INSERT INTO service_records (id, vehicle_id, date, odometer, service_type, cost, work_done,
            garage_name, next_due_km, next_due_date, notes, created_at, updated_at, deleted_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [s.id, s.vehicle_id, s.date, s.odometer, s.service_type, s.cost, s.work_done,
-           s.garage_name, s.next_due_km, s.next_due_date, s.notes, s.created_at, s.updated_at, s.deleted_at]
+          [
+            s.id,
+            s.vehicle_id,
+            s.date,
+            s.odometer ?? null,
+            s.service_type,
+            s.cost ?? null,
+            s.work_done ?? null,
+            s.garage_name ?? null,
+            s.next_due_km ?? null,
+            s.next_due_date ?? null,
+            s.notes ?? null,
+            s.created_at || nowISO(),
+            s.updated_at || nowISO(),
+            s.deleted_at ?? null,
+          ]
         );
       }
 
@@ -233,7 +311,17 @@ export function restoreFromJSON(jsonString: string): RestoreResult {
         db.runSync(
           `INSERT INTO expenses (id, vehicle_id, date, category, amount, description, created_at, updated_at, deleted_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [e.id, e.vehicle_id, e.date, e.category, e.amount, e.description, e.created_at, e.updated_at, e.deleted_at]
+          [
+            e.id,
+            e.vehicle_id,
+            e.date,
+            e.category,
+            e.amount,
+            e.description ?? null,
+            e.created_at || nowISO(),
+            e.updated_at || nowISO(),
+            e.deleted_at ?? null,
+          ]
         );
       }
 
@@ -243,8 +331,21 @@ export function restoreFromJSON(jsonString: string): RestoreResult {
           `INSERT INTO documents (id, vehicle_id, type, document_number, insurer_name, issue_date,
            expiry_date, file_uri, superseded_by, notes, created_at, updated_at, deleted_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [d.id, d.vehicle_id, d.type, d.document_number, d.insurer_name, d.issue_date,
-           d.expiry_date, d.file_uri, d.superseded_by, d.notes, d.created_at, d.updated_at, d.deleted_at]
+          [
+            d.id,
+            d.vehicle_id,
+            d.type,
+            d.document_number ?? null,
+            d.insurer_name ?? null,
+            d.issue_date ?? null,
+            d.expiry_date ?? null,
+            d.file_uri ?? null,
+            d.superseded_by ?? null,
+            d.notes ?? null,
+            d.created_at || nowISO(),
+            d.updated_at || nowISO(),
+            d.deleted_at ?? null,
+          ]
         );
       }
 

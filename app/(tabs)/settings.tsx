@@ -1,11 +1,11 @@
 /**
  * Settings Screen
  *
- * Full settings with:
- * - Vehicle management (view, archive, add)
- * - Backup (export via Share) & Restore (paste JSON)
- * - Quick-add shortcuts for service/expense
- * - App info
+ * Sections:
+ * 1. Your Vehicles — view, edit, archive active vehicles
+ * 2. Archived Vehicles — restore or permanently remove
+ * 3. Data — backup (export JSON) & restore (import JSON)
+ * 4. About — version info, update check, data safety guide
  */
 
 import { useState, useCallback } from 'react';
@@ -25,9 +25,12 @@ import { useThemeColors } from '@/hooks/useThemeColors';
 import { Typography, Spacing, Sizing } from '@/constants/theme';
 import { useVehicleStore } from '@/stores/vehicleStore';
 import { createBackup, backupToJSON, restoreFromJSON } from '@/engine/backupEngine';
-import { FUEL_TYPE_LABELS } from '@/constants/fuelTypes';
+import { FUEL_TYPE_LABELS, FUEL_TYPE_SHORT_LABELS } from '@/constants/fuelTypes';
 import type { Vehicle } from '@/types/vehicle';
 import { checkForAppUpdate, showDataSafetyGuide } from '@/services/updateChecker';
+import * as vehicleRepo from '@/database/repositories/vehicleRepo';
+
+// ─── SettingsRow ──────────────────────────────────────────────────────────
 
 interface SettingsRowProps {
   emoji: string;
@@ -36,9 +39,10 @@ interface SettingsRowProps {
   onPress?: () => void;
   colors: ReturnType<typeof useThemeColors>;
   danger?: boolean;
+  rightText?: string;
 }
 
-function SettingsRow({ emoji, title, subtitle, onPress, colors, danger }: SettingsRowProps) {
+function SettingsRow({ emoji, title, subtitle, onPress, colors, danger, rightText }: SettingsRowProps) {
   return (
     <TouchableOpacity
       style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}
@@ -52,27 +56,40 @@ function SettingsRow({ emoji, title, subtitle, onPress, colors, danger }: Settin
           <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>{subtitle}</Text>
         )}
       </View>
-      <Text style={{ color: colors.textTertiary, fontSize: 18 }}>›</Text>
+      <Text style={{ color: colors.textTertiary, fontSize: rightText ? 13 : 18, fontWeight: rightText ? '600' : '400' }}>
+        {rightText ?? '›'}
+      </Text>
     </TouchableOpacity>
   );
 }
 
+// ─── Main Screen ──────────────────────────────────────────────────────────
+
 export default function SettingsScreen() {
   const colors = useThemeColors();
   const router = useRouter();
+
   const vehicles = useVehicleStore((s) => s.vehicles);
   const loadVehicles = useVehicleStore((s) => s.loadVehicles);
   const archiveVehicle = useVehicleStore((s) => s.archiveVehicle);
+  const restoreVehicle = useVehicleStore((s) => s.restoreVehicle);
 
   const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [restoreJSON, setRestoreJSON] = useState('');
+  const [archivedVehicles, setArchivedVehicles] = useState<Vehicle[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
 
+  // Load vehicles + archived list on every focus
   useFocusEffect(
     useCallback(() => {
       loadVehicles();
+      // Load ALL vehicles and filter archived ones separately
+      const all = vehicleRepo.getAllVehicles();
+      setArchivedVehicles(all.filter((v) => v.is_archived === 1));
     }, [])
   );
 
+  // ── Backup ──
   const handleBackup = () => {
     const result = createBackup();
     if (result.success && result.backup) {
@@ -80,41 +97,59 @@ export default function SettingsScreen() {
       Share.share({
         message: json,
         title: 'DriveLedger Backup',
-      }).then(() => {
-        Alert.alert('✅ Backup Ready', result.message);
-      }).catch(() => {
-        // User cancelled share
-      });
+      }).catch(() => { /* user cancelled */ });
     } else {
       Alert.alert('❌ Backup Failed', result.message);
     }
   };
 
+  // ── Restore ──
   const handleRestore = () => {
-    if (!restoreJSON.trim()) {
-      Alert.alert('Empty', 'Paste the backup JSON first.');
+    const trimmed = restoreJSON.trim();
+
+    if (!trimmed) {
+      Alert.alert('Nothing to Restore', 'Paste the backup JSON first.');
+      return;
+    }
+
+    // Pre-validate JSON format before asking for confirmation
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (!parsed || typeof parsed !== 'object' || !parsed.data) {
+        Alert.alert(
+          '❌ Invalid Format',
+          'This doesn\'t look like a DriveLedger backup.\n\nMake sure you paste the complete JSON file that was shared from the app.'
+        );
+        return;
+      }
+    } catch {
+      Alert.alert(
+        '❌ Invalid JSON',
+        'The text you pasted is not valid JSON.\n\nCopy the entire backup text including the opening { and closing } brackets.'
+      );
       return;
     }
 
     Alert.alert(
-      '⚠️ Restore Data',
-      'This will REPLACE all current data with the backup. This cannot be undone.\n\nAre you absolutely sure?',
+      '⚠️ Replace All Data?',
+      'This will REPLACE all your current vehicle data with the backup.\n\nYour existing records will be permanently deleted first.\n\nThis cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Restore',
+          text: 'Restore Data',
           style: 'destructive',
           onPress: () => {
-            const result = restoreFromJSON(restoreJSON.trim());
+            const result = restoreFromJSON(trimmed);
             if (result.success && result.counts) {
               setShowRestoreModal(false);
               setRestoreJSON('');
               loadVehicles();
               Alert.alert(
                 '✅ Restored!',
-                `Imported:\n• ${result.counts.vehicles} vehicles\n• ${result.counts.fuel_entries} fuel entries\n• ${result.counts.service_records} service records\n• ${result.counts.expenses} expenses\n• ${result.counts.documents} documents`
+                `Your data has been restored:\n• ${result.counts.vehicles} vehicle(s)\n• ${result.counts.fuel_entries} fuel entries\n• ${result.counts.service_records} service records\n• ${result.counts.expenses} expenses\n• ${result.counts.documents} documents`
               );
             } else {
+              // result.message tells user exactly what failed and whether data is safe
               Alert.alert('❌ Restore Failed', result.message);
             }
           },
@@ -123,10 +158,11 @@ export default function SettingsScreen() {
     );
   };
 
+  // ── Archive vehicle ──
   const handleArchive = (vehicle: Vehicle) => {
     Alert.alert(
-      'Archive Vehicle',
-      `Are you sure you want to archive "${vehicle.nickname}"?\nYou can restore it later from the database.`,
+      'Archive Vehicle?',
+      `"${vehicle.nickname}" will be hidden from your active list.\n\nAll its fuel, service, and expense history is kept safe — you can restore it anytime from Settings → Archived Vehicles.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -134,7 +170,28 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: () => {
             archiveVehicle(vehicle.id);
+            const all = vehicleRepo.getAllVehicles();
+            setArchivedVehicles(all.filter((v) => v.is_archived === 1));
+          },
+        },
+      ]
+    );
+  };
+
+  // ── Restore archived vehicle ──
+  const handleRestore_Vehicle = (vehicle: Vehicle) => {
+    Alert.alert(
+      'Restore Vehicle?',
+      `"${vehicle.nickname}" will appear in your active vehicle list again along with all its history.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Restore',
+          onPress: () => {
+            restoreVehicle(vehicle.id);
             loadVehicles();
+            const all = vehicleRepo.getAllVehicles();
+            setArchivedVehicles(all.filter((v) => v.is_archived === 1));
           },
         },
       ]
@@ -145,36 +202,52 @@ export default function SettingsScreen() {
     <>
       <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.content}>
-          {/* ── Vehicles ── */}
+
+          {/* ── Active Vehicles ── */}
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
             Your Vehicles ({vehicles.length})
           </Text>
+
           {vehicles.map((v) => (
-            <TouchableOpacity
+            <View
               key={v.id}
               style={[styles.vehicleCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              onPress={() => handleArchive(v)}
-              activeOpacity={0.7}
             >
+              {/* Vehicle info */}
               <View style={styles.vehicleInfo}>
-                <Text style={[Typography.body, { color: colors.text, fontWeight: '600' }]}>
+                <Text style={[Typography.body, { color: colors.text, fontWeight: '700' }]}>
                   {v.nickname}
                 </Text>
                 <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>
-                  {v.registration_number} · {FUEL_TYPE_LABELS[v.fuel_type as keyof typeof FUEL_TYPE_LABELS] || v.fuel_type}
+                  {v.registration_number} · {FUEL_TYPE_SHORT_LABELS[v.fuel_type as keyof typeof FUEL_TYPE_SHORT_LABELS] || v.fuel_type}
                 </Text>
                 {(v.front_tyre_pressure || v.rear_tyre_pressure) && (
                   <Text style={[Typography.caption, { color: colors.textTertiary, marginTop: 2 }]}>
-                    🚨 Tyre: {v.front_tyre_pressure ? `F: ${v.front_tyre_pressure} PSI` : ''}
-                    {v.front_tyre_pressure && v.rear_tyre_pressure ? ' · ' : ''}
-                    {v.rear_tyre_pressure ? `R: ${v.rear_tyre_pressure} PSI` : ''}
+                    🚨 Tyre: {v.front_tyre_pressure ? `F ${v.front_tyre_pressure} PSI` : ''}
+                    {v.front_tyre_pressure && v.rear_tyre_pressure ? '  ·  ' : ''}
+                    {v.rear_tyre_pressure ? `R ${v.rear_tyre_pressure} PSI` : ''}
                   </Text>
                 )}
               </View>
-              <Text style={[Typography.caption, { color: colors.textTertiary }]}>
-                Tap to archive
-              </Text>
-            </TouchableOpacity>
+
+              {/* Action buttons */}
+              <View style={styles.vehicleActions}>
+                <TouchableOpacity
+                  style={[styles.vehicleAction, { borderColor: colors.primary }]}
+                  onPress={() => router.push({ pathname: '/edit-vehicle', params: { id: v.id } })}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.vehicleActionText, { color: colors.primary }]}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.vehicleAction, { borderColor: colors.border }]}
+                  onPress={() => handleArchive(v)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.vehicleActionText, { color: colors.textSecondary }]}>Archive</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           ))}
 
           <TouchableOpacity
@@ -187,66 +260,90 @@ export default function SettingsScreen() {
             </Text>
           </TouchableOpacity>
 
+          {/* ── Archived Vehicles ── */}
+          {archivedVehicles.length > 0 && (
+            <>
+              <TouchableOpacity
+                style={styles.archivedToggle}
+                onPress={() => setShowArchived(!showArchived)}
+                activeOpacity={0.7}
+              >
+                <Text style={[Typography.bodySmall, { color: colors.textSecondary, fontWeight: '600' }]}>
+                  {showArchived ? '▲' : '▼'}  Archived Vehicles ({archivedVehicles.length})
+                </Text>
+              </TouchableOpacity>
+
+              {showArchived && archivedVehicles.map((v) => (
+                <View
+                  key={v.id}
+                  style={[styles.vehicleCard, { backgroundColor: colors.surface, borderColor: colors.border, opacity: 0.65 }]}
+                >
+                  <View style={styles.vehicleInfo}>
+                    <Text style={[Typography.body, { color: colors.text, fontWeight: '700' }]}>
+                      {v.nickname}
+                    </Text>
+                    <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>
+                      {v.registration_number} · Archived
+                    </Text>
+                    <Text style={[Typography.caption, { color: colors.textTertiary, marginTop: 2 }]}>
+                      All history is preserved.
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.vehicleAction, { borderColor: colors.success }]}
+                    onPress={() => handleRestore_Vehicle(v)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.vehicleActionText, { color: colors.success }]}>Restore</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </>
+          )}
+
           {/* ── Data ── */}
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Data</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Data & Backup</Text>
           <SettingsRow
             emoji="💾"
             title="Create Backup"
-            subtitle="Export all data as JSON (share or save)"
+            subtitle="Export all data as JSON — share to Drive, WhatsApp, or Files"
             colors={colors}
             onPress={handleBackup}
           />
           <SettingsRow
             emoji="📥"
             title="Restore from Backup"
-            subtitle="Import a previously exported JSON backup"
+            subtitle="Import a backup JSON — replaces all current data"
             colors={colors}
             onPress={() => setShowRestoreModal(true)}
-          />
-
-          {/* ── Quick Actions ── */}
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Quick Actions</Text>
-          <SettingsRow
-            emoji="🔧"
-            title="Record Maintenance"
-            subtitle="Oil changes, tyre rotations, parts replacement & tune-ups"
-            colors={colors}
-            onPress={() => router.push('/add-service')}
-          />
-          <SettingsRow
-            emoji="💰"
-            title="Track Running Cost"
-            subtitle="Tolls, parking, insurance, washes & accessories"
-            colors={colors}
-            onPress={() => router.push('/add-expense')}
           />
 
           {/* ── About ── */}
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>About</Text>
           <SettingsRow
             emoji="ℹ️"
-            title="DriveLedger"
-            subtitle="v1.0.0 · Built with ❤️ for Indian drivers"
+            title="DriveLedger  v1.0.0"
+            subtitle="Offline · Private · No account needed"
             colors={colors}
             onPress={() =>
               Alert.alert(
                 'DriveLedger v1.0.0',
-                'Track fuel, mileage, services, and documents — all offline, all private.\n\nNo account needed. No data leaves your phone.',
-                [{ text: 'Nice!' }]
+                'Track fuel, mileage, services, and documents — all offline, all private.\n\nNo account. No cloud. Your data never leaves your phone.',
+                [{ text: 'Got it!' }]
               )
             }
           />
           <SettingsRow
             emoji="🔄"
             title="Check for Updates"
-            subtitle="Check GitHub Releases for new APK"
+            subtitle="Check GitHub Releases for a new APK version"
             colors={colors}
             onPress={() => checkForAppUpdate({ manual: true })}
           />
           <SettingsRow
             emoji="🛡️"
             title="Update & Data Safety Guide"
-            subtitle="How to update without losing vehicle records"
+            subtitle="How to update without losing your records"
             colors={colors}
             onPress={showDataSafetyGuide}
           />
@@ -259,15 +356,16 @@ export default function SettingsScreen() {
       <Modal visible={showRestoreModal} animationType="slide" transparent>
         <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
           <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
-            <Text style={[Typography.h2, { color: colors.text, marginBottom: Spacing.md }]}>
+            <Text style={[Typography.h2, { color: colors.text, marginBottom: Spacing.sm }]}>
               Restore from Backup
             </Text>
             <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginBottom: Spacing.lg }]}>
-              Paste the complete backup JSON below. This will REPLACE all existing data.
+              Paste the complete backup JSON below.{'\n'}
+              <Text style={{ color: colors.danger, fontWeight: '600' }}>⚠️ This replaces ALL existing data.</Text>
             </Text>
             <TextInput
               style={[styles.restoreInput, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-              placeholder="Paste backup JSON here..."
+              placeholder={'Paste backup JSON here...\n\n(The full text starting with { and ending with })'}
               placeholderTextColor={colors.textTertiary}
               value={restoreJSON}
               onChangeText={setRestoreJSON}
@@ -313,32 +411,39 @@ const styles = StyleSheet.create({
   vehicleCard: {
     flexDirection: 'row', alignItems: 'center', padding: Spacing.lg,
     borderRadius: Sizing.radiusMd, borderWidth: 1, marginBottom: Spacing.sm,
-    minHeight: Sizing.primaryButton,
   },
   vehicleInfo: { flex: 1 },
+  vehicleActions: { flexDirection: 'row', gap: Spacing.sm, marginLeft: Spacing.sm },
+  vehicleAction: {
+    borderWidth: 1.5, borderRadius: Sizing.radiusMd,
+    paddingHorizontal: Spacing.md, paddingVertical: 6,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  vehicleActionText: { fontSize: 13, fontWeight: '600' },
   addVehicleButton: {
     padding: Spacing.lg, borderRadius: Sizing.radiusMd,
     borderWidth: 2, borderStyle: 'dashed',
     alignItems: 'center', justifyContent: 'center',
     minHeight: Sizing.primaryButton, marginBottom: Spacing.sm,
   },
-  // ── Modal ──
-  modalOverlay: {
-    flex: 1, justifyContent: 'flex-end',
+  archivedToggle: {
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+    marginBottom: Spacing.sm,
   },
+  // ── Modal ──
+  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   modalContent: {
     borderTopLeftRadius: Sizing.radiusXl, borderTopRightRadius: Sizing.radiusXl,
     padding: Spacing.xxl, paddingBottom: Spacing.section,
-    maxHeight: '80%',
+    maxHeight: '85%',
   },
   restoreInput: {
     borderRadius: Sizing.radiusMd, borderWidth: 1.5,
     padding: Spacing.lg, fontSize: 13, fontFamily: 'monospace',
     minHeight: 160,
   },
-  modalButtons: {
-    flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.xl,
-  },
+  modalButtons: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.xl },
   modalButton: {
     flex: 1, height: Sizing.primaryButton,
     borderRadius: Sizing.radiusMd, justifyContent: 'center', alignItems: 'center',
