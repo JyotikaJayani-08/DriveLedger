@@ -27,6 +27,7 @@ import { useVehicleStore } from '@/stores/vehicleStore';
 import { createBackup, backupToJSON, restoreFromJSON } from '@/engine/backupEngine';
 import { FUEL_TYPE_LABELS } from '@/constants/fuelTypes';
 import type { Vehicle } from '@/types/vehicle';
+import { checkForAppUpdate, showDataSafetyGuide } from '@/services/updateChecker';
 
 interface SettingsRowProps {
   emoji: string;
@@ -234,6 +235,20 @@ export default function SettingsScreen() {
                 [{ text: 'Nice!' }]
               )
             }
+          />
+          <SettingsRow
+            emoji="🔄"
+            title="Check for Updates"
+            subtitle="Check GitHub Releases for new APK"
+            colors={colors}
+            onPress={() => checkForAppUpdate({ manual: true })}
+          />
+          <SettingsRow
+            emoji="🛡️"
+            title="Update & Data Safety Guide"
+            subtitle="How to update without losing vehicle records"
+            colors={colors}
+            onPress={showDataSafetyGuide}
           />
 
           <View style={{ height: Spacing.section }} />

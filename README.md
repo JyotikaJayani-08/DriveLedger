@@ -1,56 +1,207 @@
-# Welcome to your Expo app 👋
+# DriveLedger 🚗📊
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+<div align="center">
 
-## Get started
+![React Native](https://img.shields.io/badge/React_Native-0.86-61DAFB?style=for-the-badge&logo=react&logoColor=black)
+![Expo](https://img.shields.io/badge/Expo-SDK_57-000020?style=for-the-badge&logo=expo&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-Offline_First-003B57?style=for-the-badge&logo=sqlite&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-62_Passed-success?style=for-the-badge&logo=jest&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
 
-1. Install dependencies
+**A private, offline-first vehicle ledger and expense tracker designed for car and bike owners.**  
+*Track fuel economy, maintenance history, running costs, tyre pressure, and document expiry — all without ads, logins, or tracking.*
 
+[Download Latest APK](https://github.com/JyotikaJayani-08/DriveLedger/releases/latest) • [Key Features](#-key-features) • [Installation](#-getting-started) • [Building the APK](#-building-the-apk) • [Data Safety](#-sideload--update-safety-rules)
+
+</div>
+
+---
+
+## 🌟 Overview
+
+**DriveLedger** is built for drivers who want complete control over their vehicle expenses and maintenance history without sacrificing privacy:
+- **100% Offline & Private**: All data is stored in a local SQLite database directly on your phone. No logins, no remote analytics, no internet required.
+- **Multi-Vehicle Support**: Effortlessly switch between multiple cars, bikes, or scooters with the quick vehicle switcher visible on every screen.
+- **Indian Driving Context**: Built-in support for INR (₹), km/L, Indian number formatting (lakhs/crores), and standard Indian documents (PUC, RC, Fitness, Insurance).
+- **Direct GitHub Releases In-App Updates**: Check for and download new APK releases directly from inside the app with zero Google Play dependencies.
+
+---
+
+## ✨ Key Features
+
+### 🚗 Multi-Vehicle Context
+- Manage multiple cars, motorcycles, and commercial vehicles in one place.
+- Instant horizontal vehicle switcher chips appear on Dashboard, History, Stats, Documents, and Entry forms.
+- Per-vehicle tank capacity, fuel type (Petrol, Diesel, CNG, EV), and specifications.
+
+### ⛽ Accurate Fuel & Mileage Engine
+- True **tank-to-tank calculation** for exact fuel efficiency (km/L).
+- Handles partial fills, missed fills, and price-per-litre tracking.
+- Running averages, distance traveled between refills, and cost-per-km metrics.
+
+### 🔧 Vehicle Maintenance & Service Ledger
+- Automotive-centric record keeping: track oil changes, brake pads, filters, battery, tyre rotations, and general checkups.
+- Keep tabs on workshop/garage names, parts replaced, labor costs, and odometer intervals.
+- Service interval alerts showing exact kilometers until your next scheduled maintenance.
+
+### 💰 Running Costs & Expense Tracker
+- Record non-fuel costs: tolls, parking, car washes, state permits, insurance renewals, fines, and accessories.
+- Categorized expense tagging with monthly cost breakdown.
+
+### 🚨 Recommended Tyre Pressure Display
+- Store factory-recommended tyre pressure (PSI) for both front and rear tyres.
+- Quick tyre pressure card on the home dashboard for quick reference at petrol pumps.
+
+### 📄 Document Vault & Expiry Warnings
+- Securely store renewal dates for Insurance, PUC (Pollution Under Control), RC (Registration), Fitness Certificate, Road Tax, and Driving License.
+- Urgent dashboard alerts when documents are expiring within 30 days or overdue.
+
+### 🔄 In-App GitHub Updates
+- Checks the official [GitHub Releases API](https://api.github.com/repos/JyotikaJayani-08/DriveLedger/releases/latest) with one tap in Settings.
+- View release notes ("What's New") and download the new `.apk` directly in your browser.
+
+### 💾 1-Tap Offline Backup & Restore
+- Export your entire database as an encrypted/portable JSON file to Google Drive, WhatsApp, or local storage.
+- Easily restore or migrate your records to another device anytime.
+
+---
+
+## 📱 Tech Stack
+
+- **Framework**: [Expo SDK 57](https://expo.dev) with [React Native 0.86](https://reactnative.dev)
+- **Navigation**: [Expo Router v57](https://docs.expo.dev/router/introduction/) (file-based routing)
+- **Language**: [TypeScript](https://www.typescriptlang.org/) (Strict Mode)
+- **Local Database**: [Expo SQLite v57](https://docs.expo.dev/versions/latest/sdk/sqlite/)
+- **State Management**: [Zustand](https://github.com/pmndrs/zustand)
+- **Date & Storage Utilities**: DayJS, Expo FileSystem, Expo WebBrowser
+- **Testing**: [Jest](https://jestjs.io/) & [ts-jest](https://kulshekhar.github.io/ts-jest/) (62 unit tests)
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+- [Node.js](https://nodejs.org/) (v18 or higher recommended)
+- [npm](https://www.npmjs.com/) or [yarn](https://yarnpkg.com/)
+- [Expo Go](https://expo.dev/go) on your Android device (or an Android emulator)
+
+### Installation
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/JyotikaJayani-08/DriveLedger.git
+   cd DriveLedger
+   ```
+
+2. Install dependencies:
    ```bash
    npm install
    ```
 
-2. Start the app
-
+3. Start the Expo development server:
    ```bash
    npx expo start
    ```
 
-In the output, you'll find options to open the app in a
+4. Scan the QR code using the **Expo Go** app on your Android device to test immediately.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+---
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 📦 Building the Standalone APK
 
-## Get a fresh project
+DriveLedger uses **Expo Application Services (EAS)** for building installable Android APKs without requiring Android Studio or local toolchains.
 
-When you're ready, run:
-
-```bash
-npm run reset-project
+### 1. Configure EAS Build
+EAS build profile is configured in `eas.json` to generate standalone APKs:
+```json
+{
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    }
+  }
+}
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### 2. Build the APK in Cloud (Recommended)
+Run the following command:
+```bash
+npx eas-cli build -p android --profile preview
+```
+- Log into your free [Expo account](https://expo.dev).
+- Allow EAS to generate your Android Keystore.
+- When the build finishes (~5–8 minutes), EAS will print a **direct download link** to your `.apk`.
 
-### Other setup steps
+---
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## 🔄 Publishing Releases on GitHub
 
-## Learn more
+To distribute updates to your users:
 
-To learn more about developing your project with Expo, look at the following resources:
+1. In `app.json`, bump the version and version code:
+   ```json
+   "version": "1.1.0",
+   "android": {
+     "package": "com.driveledger.app",
+     "versionCode": 2
+   }
+   ```
+2. Build the new APK using `npx eas-cli build -p android --profile preview`.
+3. Download the generated `.apk` file from the Expo dashboard.
+4. Go to **[GitHub Releases](https://github.com/JyotikaJayani-08/DriveLedger/releases)** ➔ **Draft a new release**:
+   - Tag version: `v1.1.0`
+   - Release title: `DriveLedger v1.1.0`
+   - Description: Add release notes (What's New)
+   - Attach your downloaded `.apk` file under **Assets**.
+5. Click **Publish release**.
+6. When users tap **"Check for Updates"** in DriveLedger, the app will automatically fetch the new release and offer to download it!
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+---
 
-## Join the community
+## 🛡️ Sideload & Update Safety Rules
 
-Join our community of developers creating universal apps.
+Because DriveLedger is distributed as an APK outside Google Play, keep these rules in mind:
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+| Rule | Details |
+|---|---|
+| **1. Never Uninstall Before Updating** | Installing a newer APK directly over the existing one replaces the app binaries while **Android preserves all SQLite data and vehicle logs**. Uninstalling first will delete your data! |
+| **2. Export Backup Before Major Updates** | Go to **Settings ➔ Data & Storage ➔ Export JSON Backup** to save a snapshot to Google Drive or Files. |
+| **3. Same Keystore Signature** | EAS securely manages your keystore in the cloud. As long as you build with EAS, every update shares the exact same signature. |
+
+---
+
+## 🧪 Running Automated Tests
+
+DriveLedger includes comprehensive unit tests for calculations, date conversions, version checkers, and formatting:
+
+```bash
+npm test
+```
+
+Current test suite status:
+```
+PASS src/utils/__tests__/releaseParser.test.ts
+PASS src/utils/__tests__/version.test.ts
+PASS src/utils/__tests__/dateInput.test.ts
+PASS src/utils/__tests__/format.test.ts
+PASS src/utils/__tests__/statsHelpers.test.ts
+PASS src/utils/__tests__/date.test.ts
+
+Test Suites: 6 passed, 6 total
+Tests:       62 passed, 62 total
+```
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
+---
+
+<div align="center">
+Built with ❤️ for drivers who value their data, privacy, and vehicle maintenance.
+</div>
