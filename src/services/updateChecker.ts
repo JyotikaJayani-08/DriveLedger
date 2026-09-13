@@ -109,8 +109,8 @@ export async function checkForAppUpdate(options?: {
       return true;
     } else if (isManual) {
       Alert.alert(
-        'Up to Date ✨',
-        `DriveLedger v${currentVersion} is currently the latest version. No update needed!`
+        'You’re Up to Date! ✨',
+        `DriveLedger v${currentVersion} is the latest version. You're all set, but it never hurts to check in once in a while! 🚗`
       );
       return false;
     }
