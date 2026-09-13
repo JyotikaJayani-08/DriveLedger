@@ -28,6 +28,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { useVehicleStore } from '@/stores/vehicleStore';
 import { useDocumentStore } from '@/stores/documentStore';
 import { useThemeColors } from '@/hooks/useThemeColors';
@@ -128,11 +129,22 @@ export default function AddDocumentScreen() {
   };
 
   const handlePickPhoto = () => {
-    Alert.alert('Attach Photo', 'How would you like to add the document photo?', [
+    Alert.alert('Attach Document', 'How would you like to add the document?', [
       { text: 'Camera', onPress: takePhoto },
-      { text: 'Gallery', onPress: pickImage },
+      { text: 'Gallery (Image)', onPress: pickImage },
+      { text: 'Upload PDF', onPress: pickPDF },
       { text: 'Cancel', style: 'cancel' },
     ]);
+  };
+
+  const pickPDF = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'application/pdf',
+      copyToCacheDirectory: true,
+    });
+    if (!result.canceled && result.assets && result.assets[0]) {
+      setPhotoUri(result.assets[0].uri);
+    }
   };
 
   const parseDateInput = (display: string): string | undefined => {
@@ -294,11 +306,23 @@ export default function AddDocumentScreen() {
           keyboardType="numeric"
         />
 
-        {/* ── Photo Attachment ── */}
-        <Text style={[styles.label, { color: colors.textSecondary }]}>Document Photo</Text>
+        {/* ── Photo / PDF Attachment ── */}
+        <Text style={[styles.label, { color: colors.textSecondary }]}>Document Photo or PDF</Text>
         {photoUri ? (
           <View style={styles.photoContainer}>
-            <Image source={{ uri: photoUri }} style={styles.photoPreview} resizeMode="cover" />
+            {photoUri.toLowerCase().endsWith('.pdf') ? (
+              // PDF preview placeholder
+              <View style={[styles.pdfPreview, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Text style={{ fontSize: 48 }}>📄</Text>
+                <Text style={[Typography.body, { color: colors.text, fontWeight: '600', marginTop: Spacing.sm }]}>PDF Document</Text>
+                <Text style={[Typography.caption, { color: colors.textTertiary, marginTop: Spacing.xs, textAlign: 'center' }]}
+                  numberOfLines={1}>
+                  {photoUri.split('/').pop()}
+                </Text>
+              </View>
+            ) : (
+              <Image source={{ uri: photoUri }} style={styles.photoPreview} resizeMode="cover" />
+            )}
             <View style={styles.photoActions}>
               <TouchableOpacity
                 style={[styles.photoActionButton, { backgroundColor: colors.primary }]}
@@ -322,7 +346,7 @@ export default function AddDocumentScreen() {
           >
             <Text style={{ fontSize: 28 }}>📷</Text>
             <Text style={[Typography.bodySmall, { color: colors.primary, marginTop: Spacing.xs }]}>
-              Take Photo or Choose from Gallery
+              Take Photo, Gallery, or Upload PDF
             </Text>
             <Text style={[Typography.caption, { color: colors.textTertiary, marginTop: Spacing.xs }]}>
               Carry a digital copy — don't carry physical!
@@ -413,6 +437,16 @@ const styles = StyleSheet.create({
   },
   photoPreview: {
     width: '100%', height: 200, borderRadius: Sizing.radiusMd,
+  },
+  pdfPreview: {
+    width: '100%',
+    minHeight: 120,
+    borderRadius: Sizing.radiusMd,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.xxl,
+    paddingHorizontal: Spacing.lg,
   },
   photoActions: {
     flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm,

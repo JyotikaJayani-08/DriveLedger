@@ -21,11 +21,13 @@ import * as fuelRepo from '@/database/repositories/fuelRepo';
 import * as vehicleRepo from '@/database/repositories/vehicleRepo';
 import {
   calculateMileageForEntry,
+  calculatePartialEstimate,
   recalculateAllMileage,
   computeMileageStats,
   checkMileageReasonableness,
   type MileageStats,
   type MileageWarning,
+  type MileageResult,
 } from '@/engine/mileageEngine';
 import { FuelType, FUEL_UNIT_TO_MILEAGE_UNIT } from '@/constants/fuelTypes';
 import type { FuelUnit, VehicleType } from '@/constants/fuelTypes';
@@ -33,6 +35,12 @@ import type { FuelUnit, VehicleType } from '@/constants/fuelTypes';
 interface FuelState {
   /** Fuel entries for the currently selected vehicle (date DESC for display) */
   entries: FuelEntry[];
+  /**
+   * Estimated mileage map for partial-fill entries.
+   * Key = entry.id, value = MileageResult with isEstimate: true.
+   * Computed on-the-fly (not persisted to DB) so no migration needed.
+   */
+  partialEstimates: Record<string, MileageResult>;
   /** Mileage statistics for the selected vehicle */
   stats: MileageStats;
   /** Loading state */
@@ -58,15 +66,33 @@ const emptyStats: MileageStats = {
   worst: null,
 };
 
+/**
+ * Computes partial-fill estimated mileage for all entries in a chronological list.
+ * Returns a map of entryId → MileageResult (isEstimate: true).
+ */
+function computePartialEstimates(chronological: FuelEntry[]): Record<string, MileageResult> {
+  const map: Record<string, MileageResult> = {};
+  chronological.forEach((_, index) => {
+    const result = calculatePartialEstimate(chronological, index);
+    if (result) {
+      map[chronological[index].id] = result;
+    }
+  });
+  return map;
+}
+
 export const useFuelStore = create<FuelState>((set) => ({
   entries: [],
+  partialEstimates: {},
   stats: emptyStats,
   isLoading: true,
 
   loadEntries: (vehicleId: string) => {
     const entries = fuelRepo.getFuelEntriesByVehicle(vehicleId);
+    const chronological = fuelRepo.getFuelEntriesByVehicleChronological(vehicleId);
     const stats = computeMileageStats(entries);
-    set({ entries, stats, isLoading: false });
+    const partialEstimates = computePartialEstimates(chronological);
+    set({ entries, stats, partialEstimates, isLoading: false });
   },
 
   addFuelEntry: (input: CreateFuelEntryInput, vehicle: Vehicle) => {
@@ -106,8 +132,10 @@ export const useFuelStore = create<FuelState>((set) => ({
 
     // 6. Refresh state
     const entries = fuelRepo.getFuelEntriesByVehicle(vehicle.id);
+    const chronological2 = fuelRepo.getFuelEntriesByVehicleChronological(vehicle.id);
     const stats = computeMileageStats(entries);
-    set({ entries, stats });
+    const partialEstimates = computePartialEstimates(chronological2);
+    set({ entries, stats, partialEstimates });
 
     return { entry, warning };
   },
@@ -130,7 +158,9 @@ export const useFuelStore = create<FuelState>((set) => ({
 
     // 3. Refresh state
     const entries = fuelRepo.getFuelEntriesByVehicle(vehicle.id);
+    const chronological2 = fuelRepo.getFuelEntriesByVehicleChronological(vehicle.id);
     const stats = computeMileageStats(entries);
-    set({ entries, stats });
+    const partialEstimates = computePartialEstimates(chronological2);
+    set({ entries, stats, partialEstimates });
   },
 }));

@@ -45,6 +45,7 @@ export default function HomeScreen() {
 
   const entries = useFuelStore((s) => s.entries);
   const stats = useFuelStore((s) => s.stats);
+  const partialEstimates = useFuelStore((s) => s.partialEstimates);
   const loadEntries = useFuelStore((s) => s.loadEntries);
 
   const serviceRecords = useServiceStore((s) => s.records);
@@ -73,8 +74,15 @@ export default function HomeScreen() {
           <Text style={[styles.emptyEmoji]}>🚗</Text>
           <Text style={[Typography.h2, { color: colors.text }]}>No vehicles yet</Text>
           <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm }]}>
-            Add your first vehicle to get started!
+            Add your first vehicle to start tracking!
           </Text>
+          <TouchableOpacity
+            style={[styles.addVehicleButton, { backgroundColor: colors.primary }]}
+            onPress={() => router.push('/add-vehicle')}
+            activeOpacity={0.85}
+          >
+            <Text style={[Typography.button, { color: colors.textOnPrimary }]}>+ Add Vehicle</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -258,32 +266,42 @@ export default function HomeScreen() {
             <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>
               Recent Fuel Entries
             </Text>
-            {entries.slice(0, 5).map((entry) => (
-              <View
-                key={entry.id}
-                style={[styles.entryRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              >
-                <View style={styles.entryLeft}>
-                  <Text style={[Typography.body, { color: colors.text, fontWeight: '600' }]}>
-                    {formatDisplayDateLong(entry.date)}
-                  </Text>
-                  <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>
-                    {entry.fuel_amount} {entry.fuel_unit} · {formatCurrency(entry.total_cost)}
-                  </Text>
-                </View>
-                <View style={styles.entryRight}>
-                  {entry.calculated_mileage ? (
-                    <Text style={[Typography.body, { color: colors.success, fontWeight: '700' }]}>
-                      {entry.calculated_mileage.toFixed(1)}
+            {entries.slice(0, 5).map((entry) => {
+              const estimate = partialEstimates[entry.id];
+              return (
+                <View
+                  key={entry.id}
+                  style={[styles.entryRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                >
+                  <View style={styles.entryLeft}>
+                    <Text style={[Typography.body, { color: colors.text, fontWeight: '600' }]}>
+                      {formatDisplayDateLong(entry.date)}
                     </Text>
-                  ) : (
-                    <Text style={[Typography.bodySmall, { color: colors.textTertiary }]}>
-                      {entry.is_full_tank === 1 ? '—' : 'Partial'}
+                    <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>
+                      {entry.fuel_amount} {entry.fuel_unit} · {formatCurrency(entry.total_cost)}
                     </Text>
-                  )}
+                  </View>
+                  <View style={styles.entryRight}>
+                    {entry.calculated_mileage ? (
+                      <Text style={[Typography.body, { color: colors.success, fontWeight: '700' }]}>
+                        {entry.calculated_mileage.toFixed(1)}
+                      </Text>
+                    ) : estimate ? (
+                      <>
+                        <Text style={[Typography.body, { color: colors.warning, fontWeight: '700' }]}>
+                          ~{estimate.value.toFixed(1)}
+                        </Text>
+                        <Text style={[Typography.caption, { color: colors.textTertiary }]}>est.</Text>
+                      </>
+                    ) : (
+                      <Text style={[Typography.bodySmall, { color: colors.textTertiary }]}>
+                        {entry.is_full_tank === 1 ? '—' : 'Partial'}
+                      </Text>
+                    )}
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
 
@@ -412,6 +430,14 @@ const styles = StyleSheet.create({
   emptyEmoji: {
     fontSize: 64,
     marginBottom: Spacing.lg,
+  },
+  addVehicleButton: {
+    marginTop: Spacing.xxl,
+    height: Sizing.primaryButton,
+    borderRadius: Sizing.radiusMd,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xxxl,
   },
   // ── Expiry Banner ──
   expiryBanner: {

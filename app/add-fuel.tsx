@@ -176,7 +176,7 @@ export default function AddFuelScreen() {
       return;
     }
     if (!fuelAmount || isNaN(amountVal)) {
-      setErrors([`Enter the amount of ${fuelUnitLabel} filled.`]);
+      setErrors([`Enter the fuel quantity in ${fuelUnitLabel}.`]);
       return;
     }
     if (!pricePerUnit || isNaN(priceVal)) {
@@ -187,8 +187,9 @@ export default function AddFuelScreen() {
     if (isEditMode && params.id) {
       doUpdate(params.id, odoVal, amountVal, priceVal);
     } else {
-      // Get the last odometer for validation
-      const lastEntry = fuelRepo.getLatestFuelEntry(selectedVehicle.id);
+      // Get the previous entry BEFORE this date for date-aware validation.
+      // This prevents false "odometer must be higher" errors when logging past entries.
+      const lastEntry = fuelRepo.getFuelEntryBeforeDate(selectedVehicle.id, date);
       const previousOdometer = lastEntry?.odometer ?? null;
 
       // Run validation engine
@@ -335,9 +336,12 @@ export default function AddFuelScreen() {
           autoFocus={!isEditMode}
         />
 
-        {/* ── Fuel Amount ── */}
+        {/* ── Fuel Quantity ── */}
         <Text style={[styles.label, { color: colors.textSecondary }]}>
-          Fuel Amount ({fuelUnitLabel}) *
+          Fuel Quantity ({fuelUnitLabel}) *
+        </Text>
+        <Text style={[styles.subLabel, { color: colors.textTertiary }]}>
+          {isEV ? 'kWh charged this session' : `Litres/kg added this fill-up (not current tank level)`}
         </Text>
         <TextInput
           style={[styles.input, styles.inputLarge, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
@@ -374,10 +378,10 @@ export default function AddFuelScreen() {
         {/* ── Full Tank Toggle ── */}
         {!isEV && (
           <View style={[styles.toggleRow, { borderColor: colors.border }]}>
-            <View>
-              <Text style={[Typography.body, { color: colors.text }]}>Full Tank</Text>
-              <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>
-                Required for mileage calculation
+            <View style={{ flex: 1, marginRight: Spacing.lg }}>
+              <Text style={[Typography.body, { color: colors.text }]}>Full Tank Fill?</Text>
+              <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginTop: 2 }]}>
+                Turn ON if you filled the tank to the brim. Gives accurate mileage.{`\n`}Partial fills show an estimated (~) mileage.
               </Text>
             </View>
             <Switch
@@ -493,8 +497,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.xs,
     marginTop: Spacing.lg,
+  },
+  subLabel: {
+    fontSize: 12,
+    marginBottom: Spacing.sm,
   },
   input: {
     height: Sizing.primaryButton,

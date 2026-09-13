@@ -130,6 +130,26 @@ export function getLatestFuelEntry(vehicleId: string): FuelEntry | null {
   );
 }
 
+/**
+ * Returns the latest fuel entry whose date is strictly before the given ISO date.
+ * Used for date-aware odometer validation: when logging a past-dated entry,
+ * we compare against the chronological predecessor, not the absolute latest entry.
+ *
+ * @param vehicleId - The vehicle UUID
+ * @param isoDate - ISO date string (YYYY-MM-DD) to search before
+ * @returns The preceding entry, or null if none exists before this date
+ */
+export function getFuelEntryBeforeDate(vehicleId: string, isoDate: string): FuelEntry | null {
+  const db = getDatabase();
+  return db.getFirstSync<FuelEntry>(
+    `SELECT * FROM fuel_entries
+     WHERE vehicle_id = ? AND deleted_at IS NULL AND date < ?
+     ORDER BY date DESC, odometer DESC
+     LIMIT 1`,
+    [vehicleId, isoDate]
+  );
+}
+
 // ─── UPDATE ──────────────────────────────────────────────────────────
 
 /**
