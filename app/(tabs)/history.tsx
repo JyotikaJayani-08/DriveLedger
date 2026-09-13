@@ -59,12 +59,12 @@ export default function HistoryScreen() {
 
   const handleDeleteFuel = (entry: FuelEntry) => {
     Alert.alert(
-      'Delete Fuel Entry',
-      `Delete the entry from ${formatDisplayDateLong(entry.date)}?\n${entry.fuel_amount} ${entry.fuel_unit} · ${formatCurrency(entry.total_cost)}\n\nThis will recalculate mileage for all entries.`,
+      'Delete This Fill-up? ⛽',
+      `Heads up — deleting the entry from ${formatDisplayDateLong(entry.date)} will trigger a mileage recalculation for everything after it.\n${entry.fuel_amount} ${entry.fuel_unit} · ${formatCurrency(entry.total_cost)}\n\nStill want to nuke it?`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'Keep It', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Delete It',
           style: 'destructive',
           onPress: () => {
             if (selectedVehicle) {
@@ -78,12 +78,12 @@ export default function HistoryScreen() {
 
   const handleDeleteService = (record: ServiceRecord) => {
     Alert.alert(
-      'Delete Service Record',
-      `Delete "${record.service_type}" from ${formatDisplayDateLong(record.date)}?`,
+      'Delete Service Record? 🔧',
+      `Bye-bye "${record.service_type}" from ${formatDisplayDateLong(record.date)}. Gone forever!`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'Keep It', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Delete It',
           style: 'destructive',
           onPress: () => {
             deleteServiceRecord(record.id);
@@ -95,12 +95,12 @@ export default function HistoryScreen() {
 
   const handleDeleteExpense = (expense: Expense) => {
     Alert.alert(
-      'Delete Expense',
-      `Delete "${expense.category}" — ${formatCurrency(expense.amount)}?`,
+      'Delete Expense? 💸',
+      `Removing "${expense.category}" — ${formatCurrency(expense.amount)}. One less thing to track!`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'Keep It', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Delete It',
           style: 'destructive',
           onPress: () => {
             deleteExpense(expense.id);

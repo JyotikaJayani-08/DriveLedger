@@ -1,0 +1,60 @@
+name: Deploy Website to GitHub Pages
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - 'index.html'
+      - 'style.css'
+      - 'script.js'
+      - 'css/**'
+      - 'js/**'
+      - 'assets/**'
+      - '.github/workflows/deploysite.yaml'
+  workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+# However, do NOT cancel in-progress runs as we want those deployments to complete.
+concurrency:
+  group: 'pages'
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Prepare site directory
+        run: |
+          mkdir -p _site
+          cp index.html _site/
+          [ -f style.css ] && cp style.css _site/ || true
+          [ -f script.js ] && cp script.js _site/ || true
+          [ -d css ] && cp -r css _site/ || true
+          [ -d js ] && cp -r js _site/ || true
+          [ -d assets ] && cp -r assets _site/ || true
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '_site'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

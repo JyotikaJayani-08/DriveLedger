@@ -33,7 +33,7 @@ import { useThemeColors } from '@/hooks/useThemeColors';
 import { Typography, Spacing, Sizing } from '@/constants/theme';
 import { SERVICE_TEMPLATES } from '@/constants/serviceTemplates';
 import { todayISO } from '@/utils/date';
-import { displayToISO, isoToDisplay } from '@/utils/dateInput';
+import { displayToISO, isoToDisplay, formatDateInput } from '@/utils/dateInput';
 import { FormHeader } from '@/components/FormHeader';
 import { NoVehicleState } from '@/components/NoVehicleState';
 import { VehicleContextHeader } from '@/components/VehicleContextHeader';
@@ -87,8 +87,9 @@ export default function AddServiceScreen() {
   }
 
   const handleDateChange = (text: string) => {
-    setDateDisplay(text);
-    const parsed = displayToISO(text);
+    const formatted = formatDateInput(text, dateDisplay);
+    setDateDisplay(formatted);
+    const parsed = displayToISO(formatted);
     if (parsed) {
       setDate(parsed);
     }
@@ -111,8 +112,8 @@ export default function AddServiceScreen() {
         work_done: workDone || null,
         notes: notes || null,
       });
-      Alert.alert('✅ Updated', 'Service record updated.', [
-        { text: 'OK', onPress: () => router.back() },
+      Alert.alert('✅ Service Updated!', 'Your maintenance record is all up to date 🔧', [
+        { text: 'Sweet!', onPress: () => router.back() },
       ]);
     } else {
       addRecord({
@@ -149,7 +150,8 @@ export default function AddServiceScreen() {
           placeholderTextColor={colors.textTertiary}
           value={dateDisplay}
           onChangeText={handleDateChange}
-          keyboardType="numeric"
+          keyboardType="number-pad"
+          maxLength={10}
         />
 
         {/* ── Service Type (one-tap chips) ── */}

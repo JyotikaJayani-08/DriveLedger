@@ -14,7 +14,8 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert, Modal, Linking } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert, Modal } from 'react-native';
+import * as Sharing from 'expo-sharing';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { Typography, Spacing, Sizing } from '@/constants/theme';
@@ -58,14 +59,13 @@ export default function DocumentsScreen() {
   const handleRenew = (doc: VehicleDocument) => {
     const label = DOCUMENT_TYPE_LABELS[doc.type as keyof typeof DOCUMENT_TYPE_LABELS] || doc.type;
     Alert.alert(
-      `Renew ${label}`,
-      `This will create a new ${label} record and mark the current one as superseded.\n\nYou'll be taken to the form to fill in new details.`,
+      `Renew ${label} 🔄`,
+      `Time to freshen up that ${label}! A new record will be created and the current one retired.\n\nWe'll take you to the form — just fill in the new details.`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'Maybe Later', style: 'cancel' },
         {
-          text: 'Renew',
+          text: 'Let\'s Renew! 🎉',
           onPress: () => {
-            // Navigate to add-document with renewal params
             router.push({
               pathname: '/add-document',
               params: { renewFrom: doc.id, renewType: doc.type },
@@ -79,13 +79,23 @@ export default function DocumentsScreen() {
   /**
    * Open a document file:
    * - Images: show fullscreen modal
-   * - PDFs: open in native viewer via Linking
+   * - PDFs: share via expo-sharing (works with file:// URIs on Android)
    */
-  const openDocumentFile = (uri: string) => {
+  const openDocumentFile = async (uri: string) => {
     if (uri.toLowerCase().endsWith('.pdf')) {
-      Linking.openURL(uri).catch(() => {
-        Alert.alert('Cannot open PDF', 'No PDF viewer found on this device.');
-      });
+      try {
+        const isAvailable = await Sharing.isAvailableAsync();
+        if (isAvailable) {
+          await Sharing.shareAsync(uri, {
+            mimeType: 'application/pdf',
+            dialogTitle: 'Open PDF with…',
+          });
+        } else {
+          Alert.alert('📄 No PDF App Found', 'Your device doesn\'t have a PDF viewer installed. Try installing Adobe Acrobat or any PDF reader! 🙂');
+        }
+      } catch (e) {
+        Alert.alert('🙈 Oops!', 'Couldn\'t open the PDF. It might have moved or been deleted. Try removing and re-attaching it.');
+      }
     } else {
       setViewerUri(uri);
     }
@@ -132,12 +142,12 @@ export default function DocumentsScreen() {
         onPress={handleTap}
         onLongPress={() => {
           Alert.alert(
-            'Delete Document',
-            `Delete this ${DOCUMENT_TYPE_LABELS[item.type as keyof typeof DOCUMENT_TYPE_LABELS] || item.type} record?`,
+            'Delete This? 🗑️',
+            `You\'re about to delete this ${DOCUMENT_TYPE_LABELS[item.type as keyof typeof DOCUMENT_TYPE_LABELS] || item.type} record. No backsies!`,
             [
-              { text: 'Cancel', style: 'cancel' },
+              { text: 'Keep It', style: 'cancel' },
               {
-                text: 'Delete',
+                text: 'Delete It',
                 style: 'destructive',
                 onPress: () => {
                   if (selectedVehicle) {

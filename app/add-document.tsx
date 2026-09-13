@@ -34,7 +34,7 @@ import { useDocumentStore } from '@/stores/documentStore';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { Typography, Spacing, Sizing } from '@/constants/theme';
 import { DocumentType, DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_LIST, DOCUMENT_TYPE_ICONS } from '@/constants/documentTypes';
-import { displayToISO, isoToDisplay } from '@/utils/dateInput';
+import { displayToISO, isoToDisplay, formatDateInput } from '@/utils/dateInput';
 import { FormHeader } from '@/components/FormHeader';
 import { NoVehicleState } from '@/components/NoVehicleState';
 import { VehicleContextHeader } from '@/components/VehicleContextHeader';
@@ -96,7 +96,7 @@ export default function AddDocumentScreen() {
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please grant photo library access to attach document photos.');
+      Alert.alert('🖼️ Gallery Locked!', 'We need photo library access to grab your document. Pop into settings and allow it — we\'ll wait! 😄');
       return;
     }
 
@@ -114,7 +114,7 @@ export default function AddDocumentScreen() {
   const takePhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please grant camera access to take document photos.');
+      Alert.alert('📷 Say Cheese!', 'Camera access is needed to photograph your document. Allow it in settings and let\'s go! 📸');
       return;
     }
 
@@ -129,7 +129,7 @@ export default function AddDocumentScreen() {
   };
 
   const handlePickPhoto = () => {
-    Alert.alert('Attach Document', 'How would you like to add the document?', [
+    Alert.alert('Attach Document 📂', 'How would you like to add it?', [
       { text: 'Camera', onPress: takePhoto },
       { text: 'Gallery (Image)', onPress: pickImage },
       { text: 'Upload PDF', onPress: pickPDF },
@@ -145,6 +145,16 @@ export default function AddDocumentScreen() {
     if (!result.canceled && result.assets && result.assets[0]) {
       setPhotoUri(result.assets[0].uri);
     }
+  };
+
+  const handleIssueDateChange = (text: string) => {
+    const formatted = formatDateInput(text, issueDate);
+    setIssueDate(formatted);
+  };
+
+  const handleExpiryDateChange = (text: string) => {
+    const formatted = formatDateInput(text, expiryDate);
+    setExpiryDate(formatted);
   };
 
   const parseDateInput = (display: string): string | undefined => {
@@ -174,7 +184,7 @@ export default function AddDocumentScreen() {
         notes: notes || undefined,
         file_uri: photoUri || undefined,
       });
-      Alert.alert('✅ Renewed!', 'New document created. The old one has been marked as superseded.', [
+      Alert.alert('🎉 Renewed!', 'Fresh document added! The old one\'s been gracefully retired — out with the old, in with the new! 🔄', [
         { text: 'OK', onPress: () => router.back() },
       ]);
     } else if (isEditMode && params.id) {
@@ -187,7 +197,7 @@ export default function AddDocumentScreen() {
         notes: notes || null,
         file_uri: photoUri || null,
       });
-      Alert.alert('✅ Updated', 'Document updated.', [
+      Alert.alert('✅ Looking Good!', 'Document updated and looking sharp 📌', [
         { text: 'OK', onPress: () => router.back() },
       ]);
     } else {
@@ -291,8 +301,9 @@ export default function AddDocumentScreen() {
           placeholder="DD/MM/YYYY (e.g., 15/03/2026)"
           placeholderTextColor={colors.textTertiary}
           value={issueDate}
-          onChangeText={setIssueDate}
-          keyboardType="numeric"
+          onChangeText={handleIssueDateChange}
+          keyboardType="number-pad"
+          maxLength={10}
         />
 
         {/* ── Expiry Date ── */}
@@ -302,8 +313,9 @@ export default function AddDocumentScreen() {
           placeholder="DD/MM/YYYY (e.g., 15/03/2027)"
           placeholderTextColor={colors.textTertiary}
           value={expiryDate}
-          onChangeText={setExpiryDate}
-          keyboardType="numeric"
+          onChangeText={handleExpiryDateChange}
+          keyboardType="number-pad"
+          maxLength={10}
         />
 
         {/* ── Photo / PDF Attachment ── */}

@@ -14,20 +14,19 @@ export { GITHUB_REPO, GitHubRelease, parseGitHubRelease };
  */
 export function showDataSafetyGuide() {
   Alert.alert(
-    '🛡️ Update & Data Safety Guide',
-    `1. NEVER UNINSTALL BEFORE UPDATING\n` +
-    `• DO NOT delete your current app.\n` +
+    '🛡️ Update Like a Pro!',
+    `1. NEVER UNINSTALL FIRST — seriously, don't!\n` +
     `• Open the downloaded APK and tap "Update".\n` +
-    `• Android preserves all offline vehicle logs, fuel records, and history automatically.\n\n` +
+    `• Android keeps all your vehicle logs, fuel records, and history safe automatically.\n\n` +
 
-    `2. BACK UP YOUR DATA\n` +
-    `• DriveLedger is 100% offline—data lives only on your device.\n` +
-    `• Go to Settings > "Export Backup" to save a JSON copy to Google Drive or Files.\n\n` +
+    `2. BACK UP JUST IN CASE 💾\n` +
+    `• DriveLedger is 100% offline — data lives only on your device.\n` +
+    `• Go to Settings › Export Backup to save a JSON copy to Google Drive or Files.\n\n` +
 
-    `3. USE OFFICIAL BUILDS ONLY\n` +
+    `3. USE OFFICIAL BUILDS ONLY ✅\n` +
     `• Install only from official GitHub Releases.\n` +
-    `• Third-party builds will fail to install due to signature mismatches and can risk data loss.`,
-    [{ text: 'Understood 👍' }]
+    `• Third-party builds can fail to install and risk your data.`,
+    [{ text: 'Got it, thanks! 👍' }]
   );
 }
 
@@ -40,18 +39,18 @@ export async function checkForAppUpdate(options?: {
 }): Promise<boolean> {
   const isManual = options?.manual ?? false;
   const repo = options?.repo ?? GITHUB_REPO;
-  const currentVersion = Constants.expoConfig?.version || '1.0.1';
+  const currentVersion = Constants.expoConfig?.version || '1.0.2';
 
   if (repo === 'your-username/DriveLedger') {
     if (isManual) {
       Alert.alert(
-        'GitHub Repo Not Configured',
-        `Current app version: v${currentVersion}\n\n` +
-        `To connect with your GitHub Releases, set your "owner/repo" in src/utils/releaseParser.ts.\n\n` +
-        `Whenever you publish a release on GitHub, users can check for updates with one tap.`,
+        '🔧 GitHub Repo Not Set Up',
+        `You're on v${currentVersion} and looking sharp! 🤝\n\n` +
+        `To hook up GitHub release checking, set your "owner/repo" in src/utils/releaseParser.ts.\n\n` +
+        `Once you publish a release there, users can check for updates with one tap — pretty cool right?`,
         [
-          { text: 'Safety Rules', onPress: showDataSafetyGuide },
-          { text: 'OK', style: 'cancel' },
+          { text: 'Safety Guide 🛡️', onPress: showDataSafetyGuide },
+          { text: 'Got It!', style: 'cancel' },
         ]
       );
     }
@@ -69,8 +68,8 @@ export async function checkForAppUpdate(options?: {
     if (response.status === 404) {
       if (isManual) {
         Alert.alert(
-          'No Releases Yet',
-          `No public releases found on GitHub for DriveLedger.\n\nCurrent version: v${currentVersion}`
+          '🌚 No Releases Yet',
+          `No public releases on GitHub yet for DriveLedger.\n\nYou're on v${currentVersion} — the freshest build around! 💨`
         );
       }
       return false;
@@ -85,15 +84,16 @@ export async function checkForAppUpdate(options?: {
 
     if (result.hasUpdate) {
       Alert.alert(
-        `Update Available (v${result.version})`,
+        `🎉 Update Available! v${result.version}`,
         `${result.releaseNotes}\n\n` +
-        `🛡️ TWO SAFETY RULES:\n` +
-        `1. DO NOT uninstall your current app! Tap 'Download APK' and install over this version to keep all your records.\n` +
-        `2. Tap 'Export Backup' in Settings anytime if you want an extra copy of your data.`,
+        `🛡️ TWO GOLDEN RULES:\n` +
+        `1. Don't uninstall! Just tap 'Download APK' and install over the existing app — all your records stay safe.\n` +
+        `2. Backup first in Settings if you want extra peace of mind.\n\n` +
+        `Ready to update? Let's go! 🚀`,
         [
-          { text: 'Later', style: 'cancel' },
+          { text: 'Maybe Later', style: 'cancel' },
           {
-            text: 'Download APK',
+            text: 'Download APK 📥',
             onPress: async () => {
               if (result.downloadUrl) {
                 try {
@@ -109,7 +109,7 @@ export async function checkForAppUpdate(options?: {
       return true;
     } else if (isManual) {
       Alert.alert(
-        'You’re Up to Date! ✨',
+        "You're Up to Date! ✨",
         `DriveLedger v${currentVersion} is the latest version. You're all set, but it never hurts to check in once in a while! 🚗`
       );
       return false;
@@ -117,9 +117,9 @@ export async function checkForAppUpdate(options?: {
   } catch (err) {
     if (isManual) {
       Alert.alert(
-        'Connection Error',
-        `Could not reach GitHub Releases. Please check your internet connection.\n\nCurrent version: v${currentVersion}`,
-        [{ text: 'OK' }]
+        '😑 No Internet? Really?',
+        `Couldn't reach GitHub to check for updates. Check your connection and try again!\n\nYou're on v${currentVersion} in the meantime 👍`,
+        [{ text: 'Noted!' }]
       );
     }
   }

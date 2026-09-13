@@ -99,7 +99,7 @@ export default function SettingsScreen() {
         title: 'DriveLedger Backup',
       }).catch(() => { /* user cancelled */ });
     } else {
-      Alert.alert('❌ Backup Failed', result.message);
+      Alert.alert('😨 Backup Failed', `Something went sideways: ${result.message}\n\nMaybe try again in a sec?`);
     }
   };
 
@@ -108,7 +108,7 @@ export default function SettingsScreen() {
     const trimmed = restoreJSON.trim();
 
     if (!trimmed) {
-      Alert.alert('Nothing to Restore', 'Paste the backup JSON first.');
+      Alert.alert('🤔 Nothing to Restore', 'Paste your backup JSON first — it\'s the big text blob you exported earlier!');
       return;
     }
 
@@ -117,26 +117,26 @@ export default function SettingsScreen() {
       const parsed = JSON.parse(trimmed);
       if (!parsed || typeof parsed !== 'object' || !parsed.data) {
         Alert.alert(
-          '❌ Invalid Format',
-          'This doesn\'t look like a DriveLedger backup.\n\nMake sure you paste the complete JSON file that was shared from the app.'
+          '😕 That Doesn\'t Look Right',
+          'This doesn\'t look like a DriveLedger backup.\n\nMake sure you paste the complete JSON that was shared from the app — the whole thing, curly braces and all!'
         );
         return;
       }
     } catch {
       Alert.alert(
-        '❌ Invalid JSON',
-        'The text you pasted is not valid JSON.\n\nCopy the entire backup text including the opening { and closing } brackets.'
+        '🤨 Not Valid JSON',
+        'The text you pasted isn\'t valid JSON — copy the entire backup text, including the opening { and closing } brackets. Every character counts!'
       );
       return;
     }
 
     Alert.alert(
-      '⚠️ Replace All Data?',
-      'This will REPLACE all your current vehicle data with the backup.\n\nYour existing records will be permanently deleted first.\n\nThis cannot be undone.',
+      '⚠️ Replace Everything?',
+      'This will WIPE your current data and restore from the backup.\n\nMake absolutely sure this is the right backup file before proceeding — there\'s no undo!',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Restore Data',
+          text: 'Yes, Restore!',
           style: 'destructive',
           onPress: () => {
             const result = restoreFromJSON(trimmed);
@@ -145,12 +145,12 @@ export default function SettingsScreen() {
               setRestoreJSON('');
               loadVehicles();
               Alert.alert(
-                '✅ Restored!',
-                `Your data has been restored:\n• ${result.counts.vehicles} vehicle(s)\n• ${result.counts.fuel_entries} fuel entries\n• ${result.counts.service_records} service records\n• ${result.counts.expenses} expenses\n• ${result.counts.documents} documents`
+                '🎉 Data Restored!',
+                `Everything\'s back!\n\n🚗 ${result.counts.vehicles} vehicle(s)\n⛽ ${result.counts.fuel_entries} fuel entries\n🔧 ${result.counts.service_records} service records\n💸 ${result.counts.expenses} expenses\n📄 ${result.counts.documents} documents\n\nWelcome back! 😄`
               );
             } else {
               // result.message tells user exactly what failed and whether data is safe
-              Alert.alert('❌ Restore Failed', result.message);
+              Alert.alert('😨 Restore Failed', result.message);
             }
           },
         },
@@ -161,12 +161,12 @@ export default function SettingsScreen() {
   // ── Archive vehicle ──
   const handleArchive = (vehicle: Vehicle) => {
     Alert.alert(
-      'Archive Vehicle?',
-      `"${vehicle.nickname}" will be hidden from your active list.\n\nAll its fuel, service, and expense history is kept safe — you can restore it anytime from Settings → Archived Vehicles.`,
+      'Archive This Ride? 🏎️',
+      `"${vehicle.nickname}" will take a break from your active list.\n\nAll its history — fuel, service, expenses — stays safe. You can bring it back anytime!`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'Keep It Active', style: 'cancel' },
         {
-          text: 'Archive',
+          text: 'Archive It',
           style: 'destructive',
           onPress: () => {
             archiveVehicle(vehicle.id);
@@ -181,12 +181,12 @@ export default function SettingsScreen() {
   // ── Restore archived vehicle ──
   const handleRestore_Vehicle = (vehicle: Vehicle) => {
     Alert.alert(
-      'Restore Vehicle?',
-      `"${vehicle.nickname}" will appear in your active vehicle list again along with all its history.`,
+      'Welcome Back! 🎉',
+      `"${vehicle.nickname}" is ready to roll again! It\'ll pop back into your active list along with all its history.`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'Nah, Keep Archived', style: 'cancel' },
         {
-          text: 'Restore',
+          text: 'Restore It!',
           onPress: () => {
             restoreVehicle(vehicle.id);
             loadVehicles();
@@ -322,14 +322,14 @@ export default function SettingsScreen() {
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>About</Text>
           <SettingsRow
             emoji="ℹ️"
-            title="DriveLedger  v1.0.1"
+            title="DriveLedger  v1.0.2"
             subtitle="Offline · Private · No account needed"
             colors={colors}
             onPress={() =>
               Alert.alert(
-                'DriveLedger v1.0.1',
-                'Track fuel, mileage, services, and documents — all offline, all private.\n\nNo account. No cloud. Your data never leaves your phone.',
-                [{ text: 'Got it!' }]
+                'DriveLedger v1.0.2 🚗',
+                'Fuel, mileage, services, documents — all tracked, all offline, zero drama.\n\nNo account. No cloud. Your data stays on your phone, where it belongs. 🔐',
+                [{ text: 'Love it! ❤️' }]
               )
             }
           />

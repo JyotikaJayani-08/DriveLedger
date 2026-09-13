@@ -33,7 +33,7 @@ import { useThemeColors } from '@/hooks/useThemeColors';
 import { Typography, Spacing, Sizing } from '@/constants/theme';
 import { EXPENSE_CATEGORIES } from '@/constants/expenseCategories';
 import { todayISO } from '@/utils/date';
-import { displayToISO, isoToDisplay } from '@/utils/dateInput';
+import { displayToISO, isoToDisplay, formatDateInput } from '@/utils/dateInput';
 import { validateExpense } from '@/engine/validationEngine';
 import { FormHeader } from '@/components/FormHeader';
 import { NoVehicleState } from '@/components/NoVehicleState';
@@ -82,8 +82,9 @@ export default function AddExpenseScreen() {
   }
 
   const handleDateChange = (text: string) => {
-    setDateDisplay(text);
-    const parsed = displayToISO(text);
+    const formatted = formatDateInput(text, dateDisplay);
+    setDateDisplay(formatted);
+    const parsed = displayToISO(formatted);
     if (parsed) {
       setDate(parsed);
     }
@@ -115,8 +116,8 @@ export default function AddExpenseScreen() {
         date,
         description: description || null,
       });
-      Alert.alert('✅ Updated', 'Expense updated.', [
-        { text: 'OK', onPress: () => router.back() },
+      Alert.alert('✅ Expense Updated!', 'Got it, every rupee counts 💰', [
+        { text: 'Cool!', onPress: () => router.back() },
       ]);
     } else {
       addExpense({
@@ -150,7 +151,8 @@ export default function AddExpenseScreen() {
           placeholderTextColor={colors.textTertiary}
           value={dateDisplay}
           onChangeText={handleDateChange}
-          keyboardType="numeric"
+          keyboardType="number-pad"
+          maxLength={10}
         />
 
         {/* ── Category ── */}

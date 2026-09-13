@@ -51,7 +51,7 @@ import {
   MILEAGE_UNIT_LABELS,
 } from '@/constants/fuelTypes';
 import { todayISO } from '@/utils/date';
-import { displayToISO, isoToDisplay } from '@/utils/dateInput';
+import { displayToISO, isoToDisplay, formatDateInput } from '@/utils/dateInput';
 import { formatMileage } from '@/utils/format';
 import { validateFuelEntry, hasWarningsOnly } from '@/engine/validationEngine';
 import { recalculateAllMileage } from '@/engine/mileageEngine';
@@ -118,8 +118,9 @@ export default function AddFuelScreen() {
   const isEV = selectedVehicle.fuel_type === FuelType.ELECTRIC;
 
   const handleDateChange = (text: string) => {
-    setDateDisplay(text);
-    const parsed = displayToISO(text);
+    const formatted = formatDateInput(text, dateDisplay);
+    setDateDisplay(formatted);
+    const parsed = displayToISO(formatted);
     if (parsed) {
       setDate(parsed);
     }
@@ -129,7 +130,7 @@ export default function AddFuelScreen() {
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please grant photo library access to attach receipt photos.');
+      Alert.alert('📸 Hold up!', 'We need access to your photo library to grab that receipt pic. Allow it in settings — promise we\'re only here for the receipt! 🧾');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -145,7 +146,7 @@ export default function AddFuelScreen() {
   const takePhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please grant camera access to take receipt photos.');
+      Alert.alert('📷 Cheese! (Almost)', 'Camera access is needed to snap that receipt. Allow it in settings and we\'ll be ready to shoot! 📸');
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -158,7 +159,7 @@ export default function AddFuelScreen() {
   };
 
   const handlePickPhoto = () => {
-    Alert.alert('Attach Receipt', 'How would you like to add the receipt photo?', [
+    Alert.alert('Attach Receipt 🧾', 'How do you want to add it?', [
       { text: 'Camera', onPress: takePhoto },
       { text: 'Gallery', onPress: pickImage },
       { text: 'Cancel', style: 'cancel' },
@@ -209,8 +210,8 @@ export default function AddFuelScreen() {
       if (hasWarningsOnly(validation)) {
         const warningMessages = validation.issues.map((i) => i.message).join('\n');
         Alert.alert(
-          'Heads Up',
-          warningMessages + '\n\nSave anyway?',
+          'Heads Up! 👀',
+          warningMessages + '\n\nStill want to save it?',
           [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Save Anyway', onPress: () => doSave(odoVal, amountVal, priceVal) },
@@ -257,7 +258,7 @@ export default function AddFuelScreen() {
     // Reload entries so UI reflects new mileage
     loadEntries(selectedVehicle.id);
 
-    Alert.alert('✅ Updated', 'Fuel entry updated successfully.', [
+    Alert.alert('✅ Entry Updated!', 'Fuel entry updated. Your mileage is recalculating in the background... 🔄', [
       { text: 'OK', onPress: () => router.back() },
     ]);
   };
@@ -290,9 +291,9 @@ export default function AddFuelScreen() {
       );
       const warningText = warning ? `\n\n⚠️ ${warning.message}` : '';
       Alert.alert(
-        '⛽ Saved!',
+        '⛽ Fuelled Up!',
         `Mileage: ${mileageText}${warningText}`,
-        [{ text: 'Nice!', onPress: () => router.back() }]
+        [{ text: 'Let\'s ride! 🚗', onPress: () => router.back() }]
       );
     } else {
       router.back();
@@ -321,7 +322,8 @@ export default function AddFuelScreen() {
           placeholderTextColor={colors.textTertiary}
           value={dateDisplay}
           onChangeText={handleDateChange}
-          keyboardType="numeric"
+          keyboardType="number-pad"
+          maxLength={10}
         />
 
         {/* ── Odometer ── */}
