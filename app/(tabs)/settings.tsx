@@ -8,27 +8,27 @@
  * 4. About — version info, update check, data safety guide
  */
 
-import { useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-  Share,
-  TextInput,
-  Modal,
-} from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useThemeColors } from '@/hooks/useThemeColors';
-import { Typography, Spacing, Sizing } from '@/constants/theme';
-import { useVehicleStore } from '@/stores/vehicleStore';
-import { createBackup, backupToJSON, restoreFromJSON } from '@/engine/backupEngine';
-import { FUEL_TYPE_LABELS, FUEL_TYPE_SHORT_LABELS } from '@/constants/fuelTypes';
-import type { Vehicle } from '@/types/vehicle';
-import { checkForAppUpdate, showDataSafetyGuide } from '@/services/updateChecker';
+import { FUEL_TYPE_SHORT_LABELS } from '@/constants/fuelTypes';
+import { Sizing, Spacing, Typography } from '@/constants/theme';
 import * as vehicleRepo from '@/database/repositories/vehicleRepo';
+import { backupToJSON, createBackup, restoreFromJSON } from '@/engine/backupEngine';
+import { useThemeColors } from '@/hooks/useThemeColors';
+import { checkForAppUpdate, showDataSafetyGuide } from '@/services/updateChecker';
+import { useVehicleStore } from '@/stores/vehicleStore';
+import type { Vehicle } from '@/types/vehicle';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+import {
+  Alert,
+  Modal,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 // ─── SettingsRow ──────────────────────────────────────────────────────────
 
@@ -322,12 +322,12 @@ export default function SettingsScreen() {
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>About</Text>
           <SettingsRow
             emoji="ℹ️"
-            title="DriveLedger  v1.0.0"
+            title="DriveLedger  v1.0.1"
             subtitle="Offline · Private · No account needed"
             colors={colors}
             onPress={() =>
               Alert.alert(
-                'DriveLedger v1.0.0',
+                'DriveLedger v1.0.1',
                 'Track fuel, mileage, services, and documents — all offline, all private.\n\nNo account. No cloud. Your data never leaves your phone.',
                 [{ text: 'Got it!' }]
               )

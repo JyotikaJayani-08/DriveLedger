@@ -1,4 +1,4 @@
-import { parseGitHubRelease, GitHubRelease } from '../releaseParser';
+import { GitHubRelease, parseGitHubRelease } from '../releaseParser';
 
 describe('parseGitHubRelease', () => {
   const mockRelease: GitHubRelease = {
@@ -15,7 +15,7 @@ describe('parseGitHubRelease', () => {
   };
 
   it('detects a newer version from release tag', () => {
-    const result = parseGitHubRelease(mockRelease, '1.0.0');
+    const result = parseGitHubRelease(mockRelease, '1.0.1');
     expect(result.hasUpdate).toBe(true);
     expect(result.version).toBe('1.1.0');
     expect(result.downloadUrl).toBe(
@@ -38,7 +38,7 @@ describe('parseGitHubRelease', () => {
       html_url: 'https://github.com/test/DriveLedger/releases/tag/v2.0.0',
       assets: [],
     };
-    const result = parseGitHubRelease(releaseWithoutApk, '1.0.0');
+    const result = parseGitHubRelease(releaseWithoutApk, '1.0.1');
     expect(result.hasUpdate).toBe(true);
     expect(result.downloadUrl).toBe('https://github.com/test/DriveLedger/releases/tag/v2.0.0');
   });

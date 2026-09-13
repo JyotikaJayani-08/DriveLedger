@@ -31,11 +31,11 @@
  */
 
 import { getDatabase } from '@/database/connection';
-import type { Vehicle } from '@/types/vehicle';
+import type { VehicleDocument } from '@/types/document';
+import type { Expense } from '@/types/expense';
 import type { FuelEntry } from '@/types/fuel';
 import type { ServiceRecord } from '@/types/service';
-import type { Expense } from '@/types/expense';
-import type { VehicleDocument } from '@/types/document';
+import type { Vehicle } from '@/types/vehicle';
 import { nowISO } from '@/utils/date';
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ export function createBackup(): BackupResult {
     const backup: BackupData = {
       version: 1,
       created_at: nowISO(),
-      app_version: '1.0.0',
+      app_version: '1.0.1',
       data: {
         vehicles,
         fuel_entries: fuelEntries,
@@ -120,7 +120,7 @@ export function createBackup(): BackupResult {
     };
   } catch (e) {
     // Ensure transaction is rolled back on error
-    try { getDatabase().execSync('ROLLBACK'); } catch (_) {}
+    try { getDatabase().execSync('ROLLBACK'); } catch (_) { }
     return {
       success: false,
       message: `Backup failed: ${e instanceof Error ? e.message : 'Unknown error'}`,
