@@ -96,7 +96,7 @@ export function createBackup(): BackupResult {
     const backup: BackupData = {
       version: 1,
       created_at: nowISO(),
-      app_version: '1.0.2',
+      app_version: '1.0.3',
       data: {
         vehicles,
         fuel_entries: fuelEntries,

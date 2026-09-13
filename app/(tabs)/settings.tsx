@@ -322,12 +322,12 @@ export default function SettingsScreen() {
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>About</Text>
           <SettingsRow
             emoji="ℹ️"
-            title="DriveLedger  v1.0.2"
+            title="DriveLedger  v1.0.3"
             subtitle="Offline · Private · No account needed"
             colors={colors}
             onPress={() =>
               Alert.alert(
-                'DriveLedger v1.0.2 🚗',
+                'DriveLedger v1.0.3 🚗',
                 'Fuel, mileage, services, documents — all tracked, all offline, zero drama.\n\nNo account. No cloud. Your data stays on your phone, where it belongs. 🔐',
                 [{ text: 'Love it! ❤️' }]
               )

@@ -34,7 +34,7 @@ import { useDocumentStore } from '@/stores/documentStore';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { Typography, Spacing, Sizing } from '@/constants/theme';
 import { DocumentType, DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_LIST, DOCUMENT_TYPE_ICONS } from '@/constants/documentTypes';
-import { displayToISO, isoToDisplay, formatDateInput } from '@/utils/dateInput';
+import { displayToISO, isoToDisplay, formatDateInput, validateDateDisplay } from '@/utils/dateInput';
 import { FormHeader } from '@/components/FormHeader';
 import { NoVehicleState } from '@/components/NoVehicleState';
 import { VehicleContextHeader } from '@/components/VehicleContextHeader';
@@ -157,20 +157,38 @@ export default function AddDocumentScreen() {
     setExpiryDate(formatted);
   };
 
-  const parseDateInput = (display: string): string | undefined => {
-    if (!display.trim()) return undefined;
-    return displayToISO(display) ?? display.trim();
-  };
-
   const handleSave = () => {
     if (!docType) {
       setError('Select a document type.');
       return;
     }
-    setError('');
 
-    const parsedIssue = parseDateInput(issueDate);
-    const parsedExpiry = parseDateInput(expiryDate);
+    let parsedIssue: string | undefined = undefined;
+    if (issueDate.trim()) {
+      const issueVal = validateDateDisplay(issueDate, 'Issue date');
+      if (!issueVal.isValid) {
+        setError(issueVal.error || 'Enter a valid issue date in DD/MM/YYYY format.');
+        return;
+      }
+      parsedIssue = displayToISO(issueDate) ?? undefined;
+    }
+
+    let parsedExpiry: string | undefined = undefined;
+    if (expiryDate.trim()) {
+      const expiryVal = validateDateDisplay(expiryDate, 'Expiry date');
+      if (!expiryVal.isValid) {
+        setError(expiryVal.error || 'Enter a valid expiry date in DD/MM/YYYY format.');
+        return;
+      }
+      parsedExpiry = displayToISO(expiryDate) ?? undefined;
+    }
+
+    if (parsedIssue && parsedExpiry && parsedExpiry < parsedIssue) {
+      setError('Expiry date cannot be earlier than issue date.');
+      return;
+    }
+
+    setError('');
 
     if (isRenewMode && params.renewFrom) {
       // Renewal: create new doc and supersede old one

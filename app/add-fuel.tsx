@@ -51,7 +51,7 @@ import {
   MILEAGE_UNIT_LABELS,
 } from '@/constants/fuelTypes';
 import { todayISO } from '@/utils/date';
-import { displayToISO, isoToDisplay, formatDateInput } from '@/utils/dateInput';
+import { displayToISO, isoToDisplay, formatDateInput, validateDateDisplay } from '@/utils/dateInput';
 import { formatMileage } from '@/utils/format';
 import { validateFuelEntry, hasWarningsOnly } from '@/engine/validationEngine';
 import { recalculateAllMileage } from '@/engine/mileageEngine';
@@ -185,17 +185,28 @@ export default function AddFuelScreen() {
       return;
     }
 
+    const dateVal = validateDateDisplay(dateDisplay);
+    if (!dateVal.isValid) {
+      setErrors([dateVal.error || 'Enter a valid date in DD/MM/YYYY format.']);
+      return;
+    }
+    const isoDate = displayToISO(dateDisplay);
+    if (!isoDate) {
+      setErrors(['Enter a valid date in DD/MM/YYYY format.']);
+      return;
+    }
+
     if (isEditMode && params.id) {
-      doUpdate(params.id, odoVal, amountVal, priceVal);
+      doUpdate(params.id, odoVal, amountVal, priceVal, isoDate);
     } else {
       // Get the previous entry BEFORE this date for date-aware validation.
       // This prevents false "odometer must be higher" errors when logging past entries.
-      const lastEntry = fuelRepo.getFuelEntryBeforeDate(selectedVehicle.id, date);
+      const lastEntry = fuelRepo.getFuelEntryBeforeDate(selectedVehicle.id, isoDate);
       const previousOdometer = lastEntry?.odometer ?? null;
 
       // Run validation engine
       const validation = validateFuelEntry(
-        { odometer: odoVal, fuel_amount: amountVal, fuel_unit: fuelUnit, price_per_unit: priceVal, date },
+        { odometer: odoVal, fuel_amount: amountVal, fuel_unit: fuelUnit, price_per_unit: priceVal, date: isoDate },
         previousOdometer,
         selectedVehicle.tank_capacity,
         selectedVehicle.fuel_type as FuelType
@@ -214,20 +225,20 @@ export default function AddFuelScreen() {
           warningMessages + '\n\nStill want to save it?',
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Save Anyway', onPress: () => doSave(odoVal, amountVal, priceVal) },
+            { text: 'Save Anyway', onPress: () => doSave(odoVal, amountVal, priceVal, isoDate) },
           ]
         );
         return;
       }
 
-      doSave(odoVal, amountVal, priceVal);
+      doSave(odoVal, amountVal, priceVal, isoDate);
     }
   };
 
-  const doUpdate = (entryId: string, odoVal: number, amountVal: number, priceVal: number) => {
+  const doUpdate = (entryId: string, odoVal: number, amountVal: number, priceVal: number, entryDate: string) => {
     // B-03 FIX: Update the entry
     fuelRepo.updateFuelEntry(entryId, {
-      date,
+      date: entryDate,
       odometer: odoVal,
       fuel_amount: amountVal,
       price_per_unit: priceVal,
@@ -263,11 +274,11 @@ export default function AddFuelScreen() {
     ]);
   };
 
-  const doSave = (odoVal: number, amountVal: number, priceVal: number) => {
+  const doSave = (odoVal: number, amountVal: number, priceVal: number, entryDate: string) => {
     const { entry, warning } = addFuelEntry(
       {
         vehicle_id: selectedVehicle.id,
-        date,
+        date: entryDate,
         odometer: odoVal,
         fuel_amount: amountVal,
         fuel_unit: fuelUnit,

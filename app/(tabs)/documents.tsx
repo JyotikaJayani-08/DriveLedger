@@ -13,7 +13,7 @@
  * - Wired to centralized documentStore
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert, Modal } from 'react-native';
 import * as Sharing from 'expo-sharing';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -101,132 +101,45 @@ export default function DocumentsScreen() {
     }
   };
 
-  /**
-   * Double-tap detection per card.
-   * Returns an onPress handler that fires singleAction on first tap
-   * and doubleAction if a second tap arrives within 300ms.
-   */
-  const useDoubleTap = (singleAction: () => void, doubleAction: () => void) => {
-    const lastTap = useRef<number>(0);
-    return () => {
-      const now = Date.now();
-      if (now - lastTap.current < 300) {
-        lastTap.current = 0;
-        doubleAction();
+  const handleEdit = useCallback(
+    (item: VehicleDocument) => {
+      router.push({ pathname: '/add-document', params: { id: item.id } });
+    },
+    [router]
+  );
+
+  const handleView = useCallback(
+    (item: VehicleDocument) => {
+      if (item.file_uri) {
+        openDocumentFile(item.file_uri);
       } else {
-        lastTap.current = now;
-        // Delay single action slightly so double-tap can cancel it
-        setTimeout(() => {
-          if (lastTap.current !== 0) {
-            singleAction();
-          }
-        }, 310);
+        router.push({ pathname: '/add-document', params: { id: item.id } });
       }
-    };
-  };
+    },
+    [openDocumentFile, router]
+  );
 
-  const renderDocument = ({ item }: { item: VehicleDocument }) => {
-    const badge = getExpiryBadge(item.expiry_date);
-    const isExpiredOrExpiring = item.expiry_date && daysUntil(item.expiry_date) <= 30;
-    const isPDF = item.file_uri?.toLowerCase().endsWith('.pdf');
-
-    // Double-tap: single = edit, double = view file
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const handleTap = useDoubleTap(
-      () => router.push({ pathname: '/add-document', params: { id: item.id } }),
-      () => item.file_uri ? openDocumentFile(item.file_uri) : router.push({ pathname: '/add-document', params: { id: item.id } })
-    );
-
-    return (
-      <TouchableOpacity
-        onPress={handleTap}
-        onLongPress={() => {
-          Alert.alert(
-            'Delete This? 🗑️',
-            `You\'re about to delete this ${DOCUMENT_TYPE_LABELS[item.type as keyof typeof DOCUMENT_TYPE_LABELS] || item.type} record. No backsies!`,
-            [
-              { text: 'Keep It', style: 'cancel' },
-              {
-                text: 'Delete It',
-                style: 'destructive',
-                onPress: () => {
-                  if (selectedVehicle) {
-                    deleteDocument(item.id, selectedVehicle.id);
-                  }
-                },
-              },
-            ]
-          );
-        }}
-        activeOpacity={0.7}
-        style={[styles.docCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-      >
-        <View style={styles.docRow}>
-          <Text style={styles.docIcon}>
-            {DOCUMENT_TYPE_ICONS[item.type as keyof typeof DOCUMENT_TYPE_ICONS] || '📄'}
-          </Text>
-          <View style={styles.docInfo}>
-            <Text style={[Typography.body, { color: colors.text, fontWeight: '600' }]}>
-              {DOCUMENT_TYPE_LABELS[item.type as keyof typeof DOCUMENT_TYPE_LABELS] || item.type}
-            </Text>
-            {item.document_number && (
-              <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>
-                {item.document_number}
-              </Text>
-            )}
-            {item.insurer_name && (
-              <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>
-                {item.insurer_name}
-              </Text>
-            )}
-            {item.expiry_date && (
-              <Text style={[Typography.caption, { color: colors.textTertiary, marginTop: Spacing.xs }]}>
-                Expires: {formatDisplayDateLong(item.expiry_date)}
-              </Text>
-            )}
-          </View>
-          <View style={{ alignItems: 'flex-end', gap: Spacing.xs }}>
-            <View style={[styles.badge, { backgroundColor: badge.bgColor }]}>
-              <Text style={[Typography.caption, { color: badge.color }]}>{badge.label}</Text>
-            </View>
-            {item.file_uri && (
-              <Text style={{ fontSize: 14 }}>{isPDF ? '📄' : '📷'}</Text>
-            )}
-          </View>
-        </View>
-        {item.file_uri && !isPDF && (
-          <Image source={{ uri: item.file_uri }} style={styles.docPhoto} resizeMode="cover" />
-        )}
-        {item.file_uri && isPDF && (
-          <View style={[styles.pdfBanner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={{ fontSize: 20 }}>📄</Text>
-            <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginLeft: Spacing.sm }]}>
-              PDF attached — double tap to open
-            </Text>
-          </View>
-        )}
-
-        {/* ── Renew Button (M-07) ── */}
-        {isExpiredOrExpiring && (
-          <TouchableOpacity
-            style={[styles.renewButton, {
-              backgroundColor: daysUntil(item.expiry_date!) < 0 ? colors.danger : colors.warning,
-            }]}
-            onPress={() => handleRenew(item)}
-            activeOpacity={0.8}
-          >
-            <Text style={[Typography.caption, { color: '#FFFFFF', fontWeight: '700' }]}>
-              🔄 Renew Now
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        <Text style={[Typography.caption, { color: colors.textTertiary, marginTop: Spacing.xs }]}>
-          Tap to edit · Double tap to view · Long press to delete
-        </Text>
-      </TouchableOpacity>
-    );
-  };
+  const handleDelete = useCallback(
+    (item: VehicleDocument) => {
+      Alert.alert(
+        'Delete This? 🗑️',
+        `You're about to delete this ${DOCUMENT_TYPE_LABELS[item.type as keyof typeof DOCUMENT_TYPE_LABELS] || item.type} record. No backsies!`,
+        [
+          { text: 'Keep It', style: 'cancel' },
+          {
+            text: 'Delete It',
+            style: 'destructive',
+            onPress: () => {
+              if (selectedVehicle) {
+                deleteDocument(item.id, selectedVehicle.id);
+              }
+            },
+          },
+        ]
+      );
+    },
+    [selectedVehicle, deleteDocument]
+  );
 
   if (!selectedVehicle) {
     return (
@@ -247,7 +160,17 @@ export default function DocumentsScreen() {
       <FlatList
         data={documents}
         keyExtractor={(item) => item.id}
-        renderItem={renderDocument}
+        renderItem={({ item }) => (
+          <DocumentCard
+            item={item}
+            badge={getExpiryBadge(item.expiry_date)}
+            onEdit={handleEdit}
+            onView={handleView}
+            onDelete={handleDelete}
+            onRenew={handleRenew}
+            colors={colors}
+          />
+        )}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <View style={styles.emptyState}>
@@ -295,6 +218,136 @@ export default function DocumentsScreen() {
         </View>
       </Modal>
     </View>
+  );
+}
+
+interface DocumentCardProps {
+  item: VehicleDocument;
+  badge: { label: string; color: string; bgColor: string };
+  onEdit: (item: VehicleDocument) => void;
+  onView: (item: VehicleDocument) => void;
+  onDelete: (item: VehicleDocument) => void;
+  onRenew: (item: VehicleDocument) => void;
+  colors: ReturnType<typeof useThemeColors>;
+}
+
+function DocumentCard({
+  item,
+  badge,
+  onEdit,
+  onView,
+  onDelete,
+  onRenew,
+  colors,
+}: DocumentCardProps) {
+  const lastTapRef = useRef<number>(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
+
+  const isExpiredOrExpiring = item.expiry_date && daysUntil(item.expiry_date) <= 30;
+  const isPDF = item.file_uri?.toLowerCase().endsWith('.pdf');
+
+  const handleTap = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      lastTapRef.current = 0;
+      onView(item);
+    } else {
+      lastTapRef.current = now;
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+      timerRef.current = setTimeout(() => {
+        if (lastTapRef.current !== 0) {
+          lastTapRef.current = 0;
+          onEdit(item);
+        }
+      }, 310);
+    }
+  };
+
+  return (
+    <TouchableOpacity
+      onPress={handleTap}
+      onLongPress={() => onDelete(item)}
+      activeOpacity={0.7}
+      style={[styles.docCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+    >
+      <View style={styles.docRow}>
+        <Text style={styles.docIcon}>
+          {DOCUMENT_TYPE_ICONS[item.type as keyof typeof DOCUMENT_TYPE_ICONS] || '📄'}
+        </Text>
+        <View style={styles.docInfo}>
+          <Text style={[Typography.body, { color: colors.text, fontWeight: '600' }]}>
+            {DOCUMENT_TYPE_LABELS[item.type as keyof typeof DOCUMENT_TYPE_LABELS] || item.type}
+          </Text>
+          {item.document_number && (
+            <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>
+              {item.document_number}
+            </Text>
+          )}
+          {item.insurer_name && (
+            <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>
+              {item.insurer_name}
+            </Text>
+          )}
+          {item.expiry_date && (
+            <Text style={[Typography.caption, { color: colors.textTertiary, marginTop: Spacing.xs }]}>
+              Expires: {formatDisplayDateLong(item.expiry_date)}
+            </Text>
+          )}
+        </View>
+        <View style={{ alignItems: 'flex-end', gap: Spacing.xs }}>
+          <View style={[styles.badge, { backgroundColor: badge.bgColor }]}>
+            <Text style={[Typography.caption, { color: badge.color }]}>{badge.label}</Text>
+          </View>
+          {item.file_uri && (
+            <Text style={{ fontSize: 14 }}>{isPDF ? '📄' : '📷'}</Text>
+          )}
+        </View>
+      </View>
+      {item.file_uri && !isPDF && (
+        <Image source={{ uri: item.file_uri }} style={styles.docPhoto} resizeMode="cover" />
+      )}
+      {item.file_uri && isPDF && (
+        <View style={[styles.pdfBanner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={{ fontSize: 20 }}>📄</Text>
+          <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginLeft: Spacing.sm }]}>
+            PDF attached — double tap to open
+          </Text>
+        </View>
+      )}
+
+      {/* ── Renew Button (M-07) ── */}
+      {isExpiredOrExpiring && (
+        <TouchableOpacity
+          style={[styles.renewButton, {
+            backgroundColor: daysUntil(item.expiry_date!) < 0 ? colors.danger : colors.warning,
+          }]}
+          onPress={() => onRenew(item)}
+          activeOpacity={0.8}
+        >
+          <Text style={[Typography.caption, { color: '#FFFFFF', fontWeight: '700' }]}>
+            🔄 Renew Now
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      <Text style={[Typography.caption, { color: colors.textTertiary, marginTop: Spacing.xs }]}>
+        Tap to edit · Double tap to view · Long press to delete
+      </Text>
+    </TouchableOpacity>
   );
 }
 

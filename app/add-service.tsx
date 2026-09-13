@@ -33,7 +33,7 @@ import { useThemeColors } from '@/hooks/useThemeColors';
 import { Typography, Spacing, Sizing } from '@/constants/theme';
 import { SERVICE_TEMPLATES } from '@/constants/serviceTemplates';
 import { todayISO } from '@/utils/date';
-import { displayToISO, isoToDisplay, formatDateInput } from '@/utils/dateInput';
+import { displayToISO, isoToDisplay, formatDateInput, validateDateDisplay } from '@/utils/dateInput';
 import { FormHeader } from '@/components/FormHeader';
 import { NoVehicleState } from '@/components/NoVehicleState';
 import { VehicleContextHeader } from '@/components/VehicleContextHeader';
@@ -100,12 +100,41 @@ export default function AddServiceScreen() {
       setError('Select or type a service type.');
       return;
     }
+
+    const dateVal = validateDateDisplay(dateDisplay);
+    if (!dateVal.isValid) {
+      setError(dateVal.error || 'Enter a valid date in DD/MM/YYYY format.');
+      return;
+    }
+
+    const isoDate = displayToISO(dateDisplay);
+    if (!isoDate) {
+      setError('Enter a valid date in DD/MM/YYYY format.');
+      return;
+    }
+
+    if (cost) {
+      const parsedCost = parseFloat(cost);
+      if (isNaN(parsedCost) || parsedCost < 0) {
+        setError('Enter a valid cost amount (0 or greater).');
+        return;
+      }
+    }
+
+    if (odometer) {
+      const parsedOdo = parseFloat(odometer);
+      if (isNaN(parsedOdo) || parsedOdo < 0) {
+        setError('Enter a valid odometer reading.');
+        return;
+      }
+    }
+
     setError('');
 
     if (isEditMode && params.id) {
       editRecord(params.id, {
         service_type: serviceType.trim(),
-        date,
+        date: isoDate,
         cost: cost ? parseFloat(cost) : null,
         odometer: odometer ? parseFloat(odometer) : null,
         garage_name: garageName || null,
@@ -118,7 +147,7 @@ export default function AddServiceScreen() {
     } else {
       addRecord({
         vehicle_id: selectedVehicle.id,
-        date,
+        date: isoDate,
         service_type: serviceType.trim(),
         cost: cost ? parseFloat(cost) : undefined,
         odometer: odometer ? parseFloat(odometer) : undefined,

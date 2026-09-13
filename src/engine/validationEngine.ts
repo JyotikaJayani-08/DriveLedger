@@ -119,15 +119,31 @@ export function validateFuelEntry(input: {
 
   // ── Date validation ──
 
-  const entryDate = new Date(input.date);
-  const today = new Date();
-  today.setHours(23, 59, 59, 999); // End of today
-  if (entryDate > today) {
+  if (!input.date || !input.date.trim()) {
     issues.push({
       field: 'date',
-      severity: 'warning',
-      message: 'This date is in the future. Are you sure?',
+      severity: 'error',
+      message: 'Date is required.',
     });
+  } else {
+    const entryDate = new Date(input.date);
+    if (isNaN(entryDate.getTime())) {
+      issues.push({
+        field: 'date',
+        severity: 'error',
+        message: 'Invalid date format.',
+      });
+    } else {
+      const today = new Date();
+      today.setHours(23, 59, 59, 999); // End of today
+      if (entryDate > today) {
+        issues.push({
+          field: 'date',
+          severity: 'warning',
+          message: 'This date is in the future. Are you sure?',
+        });
+      }
+    }
   }
 
   // ── Fuel unit / fuel type cross-validation ──
@@ -203,15 +219,31 @@ export function validateExpense(input: {
     });
   }
 
-  const entryDate = new Date(input.date);
-  const today = new Date();
-  today.setHours(23, 59, 59, 999);
-  if (entryDate > today) {
+  if (!input.date || !input.date.trim()) {
     issues.push({
       field: 'date',
-      severity: 'warning',
-      message: 'This date is in the future. Are you sure?',
+      severity: 'error',
+      message: 'Date is required.',
     });
+  } else {
+    const entryDate = new Date(input.date);
+    if (isNaN(entryDate.getTime())) {
+      issues.push({
+        field: 'date',
+        severity: 'error',
+        message: 'Invalid date format.',
+      });
+    } else {
+      const today = new Date();
+      today.setHours(23, 59, 59, 999);
+      if (entryDate > today) {
+        issues.push({
+          field: 'date',
+          severity: 'warning',
+          message: 'This date is in the future. Are you sure?',
+        });
+      }
+    }
   }
 
   const hasErrors = issues.some((i) => i.severity === 'error');

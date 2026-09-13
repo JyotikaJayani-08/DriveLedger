@@ -33,7 +33,7 @@ import { useThemeColors } from '@/hooks/useThemeColors';
 import { Typography, Spacing, Sizing } from '@/constants/theme';
 import { EXPENSE_CATEGORIES } from '@/constants/expenseCategories';
 import { todayISO } from '@/utils/date';
-import { displayToISO, isoToDisplay, formatDateInput } from '@/utils/dateInput';
+import { displayToISO, isoToDisplay, formatDateInput, validateDateDisplay } from '@/utils/dateInput';
 import { validateExpense } from '@/engine/validationEngine';
 import { FormHeader } from '@/components/FormHeader';
 import { NoVehicleState } from '@/components/NoVehicleState';
@@ -96,12 +96,24 @@ export default function AddExpenseScreen() {
       return;
     }
     const amountVal = parseFloat(amount);
-    if (!amount || isNaN(amountVal)) {
-      setError('Enter a valid amount.');
+    if (!amount || isNaN(amountVal) || amountVal <= 0) {
+      setError('Enter a valid amount greater than 0.');
       return;
     }
 
-    const validation = validateExpense({ amount: amountVal, date });
+    const dateVal = validateDateDisplay(dateDisplay);
+    if (!dateVal.isValid) {
+      setError(dateVal.error || 'Enter a valid date in DD/MM/YYYY format.');
+      return;
+    }
+
+    const isoDate = displayToISO(dateDisplay);
+    if (!isoDate) {
+      setError('Enter a valid date in DD/MM/YYYY format.');
+      return;
+    }
+
+    const validation = validateExpense({ amount: amountVal, date: isoDate });
     if (!validation.isValid) {
       setError(validation.issues[0].message);
       return;
@@ -113,7 +125,7 @@ export default function AddExpenseScreen() {
       editExpense(params.id, {
         category,
         amount: amountVal,
-        date,
+        date: isoDate,
         description: description || null,
       });
       Alert.alert('✅ Expense Updated!', 'Got it, every rupee counts 💰', [
@@ -122,7 +134,7 @@ export default function AddExpenseScreen() {
     } else {
       addExpense({
         vehicle_id: selectedVehicle.id,
-        date,
+        date: isoDate,
         category,
         amount: amountVal,
         description: description || undefined,
