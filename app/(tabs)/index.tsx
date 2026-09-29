@@ -14,7 +14,7 @@
  * Flow: Open App → Dashboard → Tap [+ Add Fuel] → Fill → Save → See mileage → Close
  */
 
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -22,10 +22,11 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useVehicleStore } from '@/stores/vehicleStore';
+import { useServiceStore } from '@/stores/serviceStore';
 import { useFuelStore } from '@/stores/fuelStore';
-import { useServiceStore, getKmUntilService } from '@/stores/serviceStore';
+import { getKmUntilService } from '@/stores/serviceStore';
 import { useExpenseStore } from '@/stores/expenseStore';
 import { useDocumentStore } from '@/stores/documentStore';
 import { useThemeColors } from '@/hooks/useThemeColors';
@@ -42,6 +43,7 @@ export default function HomeScreen() {
   const router = useRouter();
 
   const selectedVehicle = useVehicleStore((s) => s.selectedVehicle);
+  const loadVehicles = useVehicleStore((s) => s.loadVehicles);
 
   const entries = useFuelStore((s) => s.entries);
   const stats = useFuelStore((s) => s.stats);
@@ -57,7 +59,22 @@ export default function HomeScreen() {
   const expiringDocs = useDocumentStore((s) => s.expiringDocs);
   const loadDocuments = useDocumentStore((s) => s.loadDocuments);
 
-  // Load all data when selected vehicle changes
+  // Load all data when the screen gains focus (handles edits/deletes from History screen)
+  const loadAll = useCallback(() => {
+    // Always refresh vehicle list so odometer reflects the latest DB value
+    loadVehicles();
+    if (selectedVehicle) {
+      loadEntries(selectedVehicle.id);
+      loadRecords(selectedVehicle.id);
+      loadExpenses(selectedVehicle.id);
+      loadDocuments(selectedVehicle.id);
+    }
+  }, [selectedVehicle?.id]);
+
+  // Re-run whenever this tab comes into focus (e.g. returning from History)
+  useFocusEffect(loadAll);
+
+  // Also re-run when the selected vehicle changes (switching vehicles)
   useEffect(() => {
     if (selectedVehicle) {
       loadEntries(selectedVehicle.id);

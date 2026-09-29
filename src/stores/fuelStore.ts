@@ -156,11 +156,24 @@ export const useFuelStore = create<FuelState>((set) => ({
       );
     }
 
-    // 3. Refresh state
+    // 3. Update vehicle odometer to the new latest entry's odometer (or null if empty)
+    const latestEntry = chronological.length > 0
+      ? chronological[chronological.length - 1]
+      : null;
+    vehicleRepo.updateVehicleOdometer(
+      vehicle.id,
+      latestEntry ? latestEntry.odometer : (vehicle.current_odometer ?? 0)
+    );
+
+    // 4. Refresh all state — including the vehicle list so odometer updates on Home
     const entries = fuelRepo.getFuelEntriesByVehicle(vehicle.id);
     const chronological2 = fuelRepo.getFuelEntriesByVehicleChronological(vehicle.id);
     const stats = computeMileageStats(entries);
     const partialEstimates = computePartialEstimates(chronological2);
     set({ entries, stats, partialEstimates });
+
+    // 5. Force vehicleStore to reload so selectedVehicle.current_odometer is fresh
+    const { useVehicleStore } = require('@/stores/vehicleStore');
+    useVehicleStore.getState().loadVehicles();
   },
 }));
