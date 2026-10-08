@@ -12,8 +12,10 @@
  * - Cost breakdown by category
  */
 
-import { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { Typography, Spacing, Sizing } from '@/constants/theme';
 import { useFuelStore } from '@/stores/fuelStore';
@@ -21,9 +23,14 @@ import { useServiceStore } from '@/stores/serviceStore';
 import { useExpenseStore } from '@/stores/expenseStore';
 import { useVehicleStore } from '@/stores/vehicleStore';
 import { MILEAGE_UNIT_LABELS } from '@/constants/fuelTypes';
-import { formatCurrency, formatMileage } from '@/utils/format';
+import { formatCurrency, formatMileage, formatOdometer } from '@/utils/format';
 import { getMonthlySpendHistory } from '@/utils/statsHelpers';
+import { buildShareSummary, computeCostPerKm } from '@/utils/shareSummary';
 import { VehicleContextHeader } from '@/components/VehicleContextHeader';
+import * as fuelRepo from '@/database/repositories/fuelRepo';
+import * as serviceRepo from '@/database/repositories/serviceRepo';
+import * as expenseRepo from '@/database/repositories/expenseRepo';
+import { computeMileageStats } from '@/engine/mileageEngine';
 
 // ─── Pure RN Bar Chart Component ────────────────────────────────────
 
@@ -129,13 +136,20 @@ export default function StatsScreen() {
   const expenses = useExpenseStore((s) => s.expenses);
   const loadExpenses = useExpenseStore((s) => s.loadExpenses);
 
-  useEffect(() => {
-    if (selectedVehicle) {
-      loadEntries(selectedVehicle.id);
-      loadRecords(selectedVehicle.id);
-      loadExpenses(selectedVehicle.id);
-    }
-  }, [selectedVehicle?.id]);
+  const vehicles = useVehicleStore((s) => s.vehicles);
+
+  // Chart range toggle: 6M | 12M | Year
+  const [chartRange, setChartRange] = useState<'6m' | '12m' | 'year'>('6m');
+
+  useFocusEffect(
+    useCallback(() => {
+      if (selectedVehicle) {
+        loadEntries(selectedVehicle.id);
+        loadRecords(selectedVehicle.id);
+        loadExpenses(selectedVehicle.id);
+      }
+    }, [selectedVehicle?.id])
+  );
 
   if (!selectedVehicle) {
     return (
@@ -174,17 +188,111 @@ export default function StatsScreen() {
     return { label, value, color };
   });
 
-  // ── Monthly cost (last 6 months) ──
-  const monthlyCostData = getMonthlySpendHistory(entries, serviceRecords, expenses, 6);
+  // ── Monthly cost chart (respects chartRange toggle) ──
+  const monthlyCostData = useMemo(() => {
+    if (chartRange === 'year') {
+      // Yearly totals: last 3 calendar years
+      const now = new Date();
+      return [0, 1, 2].reverse().map((yearsAgo) => {
+        const year = now.getFullYear() - yearsAgo;
+        let total = 0;
+        for (let m = 0; m < 12; m++) {
+          const fuelSum = entries.filter((e) => {
+            const d = new Date(e.date);
+            return d.getFullYear() === year && d.getMonth() === m;
+          }).reduce((s, e) => s + e.total_cost, 0);
+          const svcSum = serviceRecords.filter((r) => {
+            const d = new Date(r.date);
+            return d.getFullYear() === year && d.getMonth() === m;
+          }).reduce((s, r) => s + (r.cost || 0), 0);
+          const expSum = expenses.filter((e) => {
+            const d = new Date(e.date);
+            return d.getFullYear() === year && d.getMonth() === m;
+          }).reduce((s, e) => s + e.amount, 0);
+          total += fuelSum + svcSum + expSum;
+        }
+        return { label: String(year), value: Math.round(total) };
+      });
+    }
+    return getMonthlySpendHistory(entries, serviceRecords, expenses, chartRange === '12m' ? 12 : 6);
+  }, [entries, serviceRecords, expenses, chartRange]);
+
+  // ── Cross-vehicle comparison (reads DB directly, not per-vehicle store) ──
+  // Only built when there are 2+ active vehicles.
+  const crossVehicleData = useMemo(() => {
+    if (vehicles.length < 2) return null;
+    return vehicles.map((v) => {
+      const entries = fuelRepo.getFuelEntriesByVehicleChronological(v.id);
+      const svc = serviceRepo.getServiceRecordsByVehicle(v.id);
+      const exp = expenseRepo.getExpensesByVehicle(v.id);
+      const mStats = computeMileageStats(entries);
+      const fuelCost = entries.reduce((s, e) => s + e.total_cost, 0);
+      const svcCost = svc.reduce((s, r) => s + (r.cost || 0), 0);
+      const expCost = exp.reduce((s, e) => s + e.amount, 0);
+      return {
+        id: v.id,
+        name: v.nickname,
+        avgMileage: mStats.runningAverage?.value ?? null,
+        mileageUnit: mStats.runningAverage ? MILEAGE_UNIT_LABELS[mStats.runningAverage.unit] : null,
+        totalCost: fuelCost + svcCost + expCost,
+      };
+    }).filter((d) => d.avgMileage !== null || d.totalCost > 0);
+  }, [vehicles]);
+
+  // ── Distance-based stats ──
+  const { kmTracked, costPerKm } = computeCostPerKm(
+    entries.map((e) => e.odometer),
+    totalOwnershipCost
+  );
+
+  // ── Share summary ──
+  const handleShare = async () => {
+    const unitLabel = stats.runningAverage ? MILEAGE_UNIT_LABELS[stats.runningAverage.unit] : null;
+    const message = buildShareSummary({
+      vehicleName: selectedVehicle.nickname,
+      registrationNumber: selectedVehicle.registration_number,
+      odometerText: selectedVehicle.current_odometer ? formatOdometer(selectedVehicle.current_odometer) : null,
+      fuelCost: totalFuelCost,
+      serviceCost: totalServiceCost,
+      expenseCost: totalExpenseCost,
+      fillUps: totalEntries,
+      avgMileageText: stats.runningAverage && unitLabel
+        ? formatMileage(stats.runningAverage.value, unitLabel)
+        : null,
+      bestMileageText: stats.best ? stats.best.value.toFixed(1) : null,
+      worstMileageText: stats.worst ? stats.worst.value.toFixed(1) : null,
+      kmTracked,
+      costPerKm,
+      formatMoney: formatCurrency,
+    });
+    try {
+      await Share.share({ message });
+    } catch {
+      // User dismissed or share unavailable — nothing to do
+    }
+  };
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.content}>
         <VehicleContextHeader label="Stats for" />
 
-        <Text style={[Typography.h2, { color: colors.text, marginBottom: Spacing.xl, marginTop: Spacing.md }]}>
-          {selectedVehicle.nickname} Stats
-        </Text>
+        <View style={styles.titleRow}>
+          <Text style={[Typography.h2, { color: colors.text, flex: 1 }]}>
+            {selectedVehicle.nickname} Stats
+          </Text>
+          <TouchableOpacity
+            onPress={handleShare}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Share summary"
+            style={[styles.shareButton, { borderColor: colors.primary }]}
+          >
+            <Text style={[Typography.caption, { color: colors.primary, fontWeight: '700' }]}>
+              📤 Share
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         {/* ── Total Ownership Cost (hero card) ── */}
         <View style={[styles.heroCard, { backgroundColor: colors.primary }]}>
@@ -262,10 +370,33 @@ export default function StatsScreen() {
         {/* ── Monthly Cost Chart ── */}
         {monthlyCostData.some((d) => d.value > 0) && (
           <View style={[styles.chartCard, { backgroundColor: colors.surface, ...Sizing.cardShadow }]}>
-            <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.lg }]}>
-              Monthly Total Spend
-            </Text>
-            <Text style={[Typography.caption, { color: colors.textTertiary, marginBottom: Spacing.md }]}>
+            <View style={styles.chartHeader}>
+              <Text style={[Typography.h3, { color: colors.text }]}>
+                Monthly Total Spend
+              </Text>
+              {/* Range toggle */}
+              <View style={[styles.segmentControl, { borderColor: colors.border }]}>
+                {(['6m', '12m', 'year'] as const).map((range) => (
+                  <TouchableOpacity
+                    key={range}
+                    style={[
+                      styles.segmentBtn,
+                      chartRange === range && { backgroundColor: colors.primary },
+                    ]}
+                    onPress={() => setChartRange(range)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[
+                      Typography.caption,
+                      { color: chartRange === range ? '#FFF' : colors.textSecondary, fontWeight: '700' },
+                    ]}>
+                      {range === '6m' ? '6M' : range === '12m' ? '12M' : 'Year'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            <Text style={[Typography.caption, { color: colors.textTertiary, marginBottom: Spacing.md, marginTop: Spacing.xs }]}>
               Fuel + Service + Expenses
             </Text>
             <BarChart
@@ -273,7 +404,7 @@ export default function StatsScreen() {
               barColor={colors.accent}
               labelColor={colors.textTertiary}
               valueColor={colors.textSecondary}
-              height={100}
+              height={chartRange === 'year' ? 80 : 100}
             />
           </View>
         )}
@@ -311,11 +442,62 @@ export default function StatsScreen() {
             <View style={[styles.quickRow, { borderBottomColor: colors.border }]}>
               <Text style={[Typography.body, { color: colors.textSecondary }]}>Total km tracked</Text>
               <Text style={[Typography.body, { color: colors.text, fontWeight: '700' }]}>
-                {(entries[0].odometer - entries[entries.length - 1].odometer).toLocaleString('en-IN')} km
+                {kmTracked.toLocaleString('en-IN')} km
+              </Text>
+            </View>
+          )}
+          {costPerKm != null && (
+            <View style={[styles.quickRow, { borderBottomColor: colors.border }]}>
+              <Text style={[Typography.body, { color: colors.textSecondary }]}>Cost per km</Text>
+              <Text style={[Typography.body, { color: colors.primary, fontWeight: '700' }]}>
+                {formatCurrency(costPerKm)}/km
               </Text>
             </View>
           )}
         </View>
+
+        <View style={{ height: Spacing.section }} />
+
+        {/* ── Cross-vehicle Comparison ── */}
+        {crossVehicleData && crossVehicleData.length >= 2 && (() => {
+          const mileageRows = crossVehicleData.filter((d) => d.avgMileage !== null);
+          const costRows = [...crossVehicleData].sort((a, b) => b.totalCost - a.totalCost);
+          return (
+            <View style={[styles.chartCard, { backgroundColor: colors.surface, ...Sizing.cardShadow }]}>
+              <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>
+                🚗 Fleet Comparison
+              </Text>
+
+              {mileageRows.length >= 2 && (
+                <>
+                  <Text style={[Typography.caption, { color: colors.textTertiary, marginBottom: Spacing.sm }]}>
+                    Avg mileage per vehicle
+                  </Text>
+                  <BarChart
+                    data={mileageRows.map((d) => ({ label: d.name, value: Number(d.avgMileage!.toFixed(1)) }))}
+                    barColor={colors.primary}
+                    labelColor={colors.textTertiary}
+                    valueColor={colors.textSecondary}
+                    height={90}
+                  />
+                  <View style={{ height: Spacing.lg }} />
+                </>
+              )}
+
+              <Text style={[Typography.caption, { color: colors.textTertiary, marginBottom: Spacing.sm }]}>
+                Total ownership cost
+              </Text>
+              {costRows.map((d) => (
+                <View key={d.id} style={[styles.quickRow, { borderBottomColor: colors.border }]}>
+                  <Text style={[Typography.body, { color: colors.textSecondary }]}>{d.name}</Text>
+                  <Text style={[Typography.body, { color: colors.text, fontWeight: '700' }]}>
+                    {formatCurrency(d.totalCost)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          );
+        })()}
 
         <View style={{ height: Spacing.section }} />
       </View>
@@ -326,6 +508,19 @@ export default function StatsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: Spacing.lg },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xl,
+  },
+  shareButton: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Sizing.radiusFull,
+    borderWidth: 1.5,
+  },
   heroCard: {
     borderRadius: Sizing.radiusLg,
     padding: Spacing.xxl,
@@ -363,6 +558,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: Spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  chartHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.xs,
+  },
+  segmentControl: {
+    flexDirection: 'row',
+    borderRadius: Sizing.radiusMd,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  segmentBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 5,
   },
   emptyState: {
     flex: 1, justifyContent: 'center', alignItems: 'center',

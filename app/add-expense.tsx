@@ -39,6 +39,7 @@ import { FormHeader } from '@/components/FormHeader';
 import { NoVehicleState } from '@/components/NoVehicleState';
 import { VehicleContextHeader } from '@/components/VehicleContextHeader';
 import * as expenseRepo from '@/database/repositories/expenseRepo';
+import { getCurrencySymbol } from '@/stores/preferencesStore';
 
 export default function AddExpenseScreen() {
   const colors = useThemeColors();
@@ -196,7 +197,7 @@ export default function AddExpenseScreen() {
         </View>
 
         {/* ── Amount ── */}
-        <Text style={[styles.label, { color: colors.textSecondary }]}>Amount (₹) *</Text>
+        <Text style={[styles.label, { color: colors.textSecondary }]}>Amount ({getCurrencySymbol()}) *</Text>
         <TextInput
           style={[styles.input, styles.inputLarge, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
           placeholder="e.g., 5000"

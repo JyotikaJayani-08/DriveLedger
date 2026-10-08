@@ -1,7 +1,8 @@
 /**
  * Notification Service
  *
- * Handles local push notifications for document expiry warnings.
+ * Handles local push notifications for document expiry warnings
+ * and service-due reminders.
  *
  * HOW IT WORKS:
  * 1. On app launch, checks all documents for upcoming expiry.
@@ -12,6 +13,7 @@
  * - Expired documents → immediate notification
  * - Expiring in ≤7 days → notification now + daily reminder
  * - Expiring in ≤30 days → notification now
+ * - Service overdue / due within 500 km or 7 days → notification now
  *
  * NOTE: All notifications are LOCAL. No server, no internet, no account.
  *
@@ -25,8 +27,21 @@
 import { Platform } from 'react-native';
 import { isRunningInExpoGo } from 'expo';
 import * as documentRepo from '@/database/repositories/documentRepo';
+import * as serviceRepo from '@/database/repositories/serviceRepo';
+import * as vehicleRepo from '@/database/repositories/vehicleRepo';
+import { getKmUntilService } from '@/stores/serviceStore';
 import { DOCUMENT_TYPE_LABELS } from '@/constants/documentTypes';
 import { daysUntil } from '@/utils/date';
+
+// ─── Constants ──────────────────────────────────────────────────────
+
+const CHANNEL_DOCUMENT_EXPIRY = 'document-expiry';
+const CHANNEL_SERVICE_DUE = 'service-due';
+
+/** Remind when the next service is within this many km. */
+const SERVICE_DUE_KM_THRESHOLD = 500;
+/** Remind when the next service date is within this many days. */
+const SERVICE_DUE_DAYS_THRESHOLD = 7;
 
 // ─── Expo Go detection ──────────────────────────────────────────────
 // Since SDK 53, expo-notifications is NOT available in Expo Go.
@@ -111,17 +126,155 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return false;
 }
 
-// ─── Schedule Expiry Notifications ──────────────────────────────────
+// ─── Helpers ────────────────────────────────────────────────────────
+
+type NotificationsModule = typeof import('expo-notifications');
+
+/** Fires a notification immediately on the given Android channel. */
+function notifyNow(
+  N: NotificationsModule,
+  channelId: string,
+  title: string,
+  body: string,
+  data: Record<string, unknown>
+): Promise<string> {
+  return N.scheduleNotificationAsync({
+    content: { title, body, data },
+    trigger: { channelId },
+  });
+}
+
+/** "1 day" / "3 days" */
+function pluralDays(n: number): string {
+  return `${n} day${n !== 1 ? 's' : ''}`;
+}
+
+// ─── Document Expiry ────────────────────────────────────────────────
+
+async function scheduleDocumentNotifications(
+  N: NotificationsModule,
+  vehicleId: string
+): Promise<void> {
+  const docs = documentRepo.getCurrentDocumentsByVehicle(vehicleId);
+
+  for (const doc of docs) {
+    if (!doc.expiry_date) continue;
+
+    const days = daysUntil(doc.expiry_date);
+    const label = DOCUMENT_TYPE_LABELS[doc.type as keyof typeof DOCUMENT_TYPE_LABELS] || doc.type;
+    const data = { documentId: doc.id, type: 'expiry' };
+
+    if (days < 0) {
+      await notifyNow(
+        N, CHANNEL_DOCUMENT_EXPIRY,
+        '🚨 Document Expired!',
+        `Your ${label} expired ${pluralDays(Math.abs(days))} ago. Please renew it.`,
+        data
+      );
+    } else if (days <= 7) {
+      await notifyNow(
+        N, CHANNEL_DOCUMENT_EXPIRY,
+        '⚠️ Document Expiring Soon!',
+        `Your ${label} expires in ${pluralDays(days)}. Renew before it's too late!`,
+        data
+      );
+
+      // Daily 9 AM reminder for the remaining days
+      if (days > 0) {
+        await N.scheduleNotificationAsync({
+          content: {
+            title: '📋 Renewal Reminder',
+            body: `Your ${label} expires soon. Don't forget to renew!`,
+            data: { documentId: doc.id, type: 'expiry_reminder' },
+          },
+          trigger: {
+            type: N.SchedulableTriggerInputTypes.DAILY,
+            hour: 9,
+            minute: 0,
+            channelId: CHANNEL_DOCUMENT_EXPIRY,
+          },
+        });
+      }
+    } else if (days <= 30) {
+      await notifyNow(
+        N, CHANNEL_DOCUMENT_EXPIRY,
+        '📋 Document Expiry Notice',
+        `Your ${label} expires in ${days} days. Plan to renew it soon.`,
+        data
+      );
+    }
+  }
+}
+
+// ─── Service Due ────────────────────────────────────────────────────
 
 /**
- * Checks all vehicles' documents and schedules notifications for
- * any that are expired or expiring soon.
+ * Notifies when the latest service record's next_due_km / next_due_date
+ * is overdue or approaching.
+ */
+async function scheduleServiceNotifications(
+  N: NotificationsModule,
+  vehicleId: string
+): Promise<void> {
+  const vehicle = vehicleRepo.getVehicleById(vehicleId);
+  const latest = serviceRepo.getLatestServiceRecord(vehicleId);
+  if (!vehicle || !latest) return;
+
+  const data = { vehicleId, serviceId: latest.id, type: 'service_due' };
+  const name = vehicle.nickname;
+
+  // Distance-based
+  const kmLeft = getKmUntilService(vehicle, latest);
+  if (kmLeft !== null) {
+    if (kmLeft <= 0) {
+      await notifyNow(
+        N, CHANNEL_SERVICE_DUE,
+        '🔧 Service Overdue!',
+        `${name} is ${Math.round(Math.abs(kmLeft)).toLocaleString('en-IN')} km past its service due. Book a service.`,
+        data
+      );
+    } else if (kmLeft <= SERVICE_DUE_KM_THRESHOLD) {
+      await notifyNow(
+        N, CHANNEL_SERVICE_DUE,
+        '🔧 Service Due Soon',
+        `${name} is due for service in ${Math.round(kmLeft).toLocaleString('en-IN')} km.`,
+        data
+      );
+    }
+  }
+
+  // Date-based
+  if (latest.next_due_date) {
+    const days = daysUntil(latest.next_due_date);
+    if (days < 0) {
+      await notifyNow(
+        N, CHANNEL_SERVICE_DUE,
+        '🔧 Service Overdue!',
+        `${name}'s service was due ${pluralDays(Math.abs(days))} ago.`,
+        data
+      );
+    } else if (days <= SERVICE_DUE_DAYS_THRESHOLD) {
+      await notifyNow(
+        N, CHANNEL_SERVICE_DUE,
+        '🔧 Service Due Soon',
+        days === 0 ? `${name} is due for service today.` : `${name} is due for service in ${pluralDays(days)}.`,
+        data
+      );
+    }
+  }
+}
+
+// ─── Schedule All Reminders ─────────────────────────────────────────
+
+/**
+ * Checks all vehicles' documents and service records, and schedules
+ * notifications for anything expired, overdue, or coming due.
  *
- * Call this once on app launch (from _layout.tsx).
+ * Call on app launch and whenever vehicles change (from _layout.tsx).
  *
  * @param vehicleIds - Array of active vehicle IDs to check
  */
-export async function scheduleExpiryNotifications(vehicleIds: string[]): Promise<void> {
+export async function scheduleReminderNotifications(vehicleIds: string[]): Promise<void> {
   const N = getNotifications();
   if (!N) return;
 
@@ -131,66 +284,12 @@ export async function scheduleExpiryNotifications(vehicleIds: string[]): Promise
   if (!hasPermission) return;
 
   try {
-    // Cancel any previously scheduled expiry notifications
+    // Cancel previously scheduled notifications to avoid duplicates
     await cancelAllExpiryNotifications();
 
     for (const vehicleId of vehicleIds) {
-      const docs = documentRepo.getCurrentDocumentsByVehicle(vehicleId);
-
-      for (const doc of docs) {
-        if (!doc.expiry_date) continue;
-
-        const days = daysUntil(doc.expiry_date);
-        const label = DOCUMENT_TYPE_LABELS[doc.type as keyof typeof DOCUMENT_TYPE_LABELS] || doc.type;
-
-        if (days < 0) {
-          // Already expired — immediate notification
-          await N.scheduleNotificationAsync({
-            content: {
-              title: '🚨 Document Expired!',
-              body: `Your ${label} expired ${Math.abs(days)} days ago. Please renew it.`,
-              data: { documentId: doc.id, type: 'expiry' },
-            },
-            trigger: null, // Fire immediately
-          });
-        } else if (days <= 7) {
-          // Expiring very soon — immediate + daily reminder
-          await N.scheduleNotificationAsync({
-            content: {
-              title: '⚠️ Document Expiring Soon!',
-              body: `Your ${label} expires in ${days} day${days !== 1 ? 's' : ''}. Renew before it's too late!`,
-              data: { documentId: doc.id, type: 'expiry' },
-            },
-            trigger: null,
-          });
-
-          // Schedule a daily reminder at 9 AM for the remaining days
-          if (days > 0) {
-            await N.scheduleNotificationAsync({
-              content: {
-                title: '📋 Renewal Reminder',
-                body: `Your ${label} expires soon. Don't forget to renew!`,
-                data: { documentId: doc.id, type: 'expiry_reminder' },
-              },
-              trigger: {
-                type: N.SchedulableTriggerInputTypes.DAILY,
-                hour: 9,
-                minute: 0,
-              },
-            });
-          }
-        } else if (days <= 30) {
-          // Expiring within a month — one-time heads-up
-          await N.scheduleNotificationAsync({
-            content: {
-              title: '📋 Document Expiry Notice',
-              body: `Your ${label} expires in ${days} days. Plan to renew it soon.`,
-              data: { documentId: doc.id, type: 'expiry' },
-            },
-            trigger: null,
-          });
-        }
-      }
+      await scheduleDocumentNotifications(N, vehicleId);
+      await scheduleServiceNotifications(N, vehicleId);
     }
   } catch (error) {
     console.warn('[DriveLedger] Failed to schedule notifications:', error);
@@ -228,12 +327,19 @@ export async function setupNotificationChannel(): Promise<void> {
 
   try {
     if (Platform.OS === 'android') {
-      await N.setNotificationChannelAsync('document-expiry', {
+      await N.setNotificationChannelAsync(CHANNEL_DOCUMENT_EXPIRY, {
         name: 'Document Expiry',
         importance: N.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#FF9500',
         description: 'Notifications for vehicle document expiry reminders',
+      });
+      await N.setNotificationChannelAsync(CHANNEL_SERVICE_DUE, {
+        name: 'Service Reminders',
+        importance: N.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#0A84FF',
+        description: 'Notifications for upcoming and overdue vehicle services',
       });
     }
   } catch {

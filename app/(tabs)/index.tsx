@@ -14,27 +14,28 @@
  * Flow: Open App → Dashboard → Tap [+ Add Fuel] → Fill → Save → See mileage → Close
  */
 
-import { useEffect, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  RefreshControl,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useVehicleStore } from '@/stores/vehicleStore';
-import { useServiceStore } from '@/stores/serviceStore';
 import { useFuelStore } from '@/stores/fuelStore';
-import { getKmUntilService } from '@/stores/serviceStore';
+import { useServiceStore, getKmUntilService } from '@/stores/serviceStore';
 import { useExpenseStore } from '@/stores/expenseStore';
 import { useDocumentStore } from '@/stores/documentStore';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { Typography, Spacing, Sizing } from '@/constants/theme';
 import { MILEAGE_UNIT_LABELS } from '@/constants/fuelTypes';
 import { formatCurrency, formatOdometer, formatMileage } from '@/utils/format';
+import { convertPressure, getPressureLabel } from '@/stores/preferencesStore';
 import { formatDisplayDateLong, daysUntil } from '@/utils/date';
-import { getCurrentMonthTotalSpend } from '@/utils/statsHelpers';
+import { getCurrentMonthTotalSpend, estimateFuelLevel } from '@/utils/statsHelpers';
 import { DOCUMENT_TYPE_LABELS } from '@/constants/documentTypes';
 import { VehicleContextHeader } from '@/components/VehicleContextHeader';
 
@@ -59,9 +60,12 @@ export default function HomeScreen() {
   const expiringDocs = useDocumentStore((s) => s.expiringDocs);
   const loadDocuments = useDocumentStore((s) => s.loadDocuments);
 
-  // Load all data when the screen gains focus (handles edits/deletes from History screen)
+  // ── Data loading ─────────────────────────────────────────────────────
+  // useFocusEffect fires on initial mount AND every time this tab gains
+  // focus (e.g. returning from History after an edit/delete).
+  // Single hook — no redundant useEffect needed.
   const loadAll = useCallback(() => {
-    // Always refresh vehicle list so odometer reflects the latest DB value
+    // Always refresh vehicle list so current_odometer reflects latest DB value
     loadVehicles();
     if (selectedVehicle) {
       loadEntries(selectedVehicle.id);
@@ -71,18 +75,16 @@ export default function HomeScreen() {
     }
   }, [selectedVehicle?.id]);
 
-  // Re-run whenever this tab comes into focus (e.g. returning from History)
   useFocusEffect(loadAll);
 
-  // Also re-run when the selected vehicle changes (switching vehicles)
-  useEffect(() => {
-    if (selectedVehicle) {
-      loadEntries(selectedVehicle.id);
-      loadRecords(selectedVehicle.id);
-      loadExpenses(selectedVehicle.id);
-      loadDocuments(selectedVehicle.id);
-    }
-  }, [selectedVehicle?.id]);
+  // ── Pull-to-refresh ──────────────────────────────────────────────────
+  // Loads are synchronous (SQLite), so the spinner is just brief feedback.
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadAll();
+    setTimeout(() => setRefreshing(false), 500);
+  }, [loadAll]);
 
   if (!selectedVehicle) {
     return (
@@ -105,18 +107,66 @@ export default function HomeScreen() {
     );
   }
 
-  const lastEntry = entries.length > 0 ? entries[0] : null;
-  const lastService = serviceRecords.length > 0 ? serviceRecords[0] : null;
+  const lastEntry      = entries.length > 0 ? entries[0] : null;
+  const lastService    = serviceRecords.length > 0 ? serviceRecords[0] : null;
   const kmUntilService = getKmUntilService(selectedVehicle, lastService);
 
-  // Compute this month's total spend (fuel + service + expense)
   const { total: monthlyTotal } = getCurrentMonthTotalSpend(entries, serviceRecords, expenses);
+
+  // Fuel level estimate — uses running average mileage + current odometer.
+  // Returns null when tank_capacity, odometer, or avg mileage aren't available yet.
+  const fuelLevel = estimateFuelLevel(
+    entries,
+    selectedVehicle.tank_capacity,
+    selectedVehicle.current_odometer,
+    stats.runningAverage?.value ?? null
+  );
+
+  /** Why the fuel level can't be shown yet (null when it can, or nothing to say). */
+  const fuelLevelTip: string | null =
+    fuelLevel !== null
+      ? null
+      : !selectedVehicle.tank_capacity
+        ? 'Add your tank capacity (Edit Vehicle) to see an estimated fuel level.'
+        : !stats.runningAverage
+          ? 'Log two full-tank fill-ups to unlock the estimated fuel level.'
+          : null;
+
+  // ── Inline rendering helpers ─────────────────────────────────────────
+
+  /** Formats document expiry days into a user-facing string. */
+  const docExpiryText = (days: number): string => {
+    if (days < 0) return `Expired ${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''} ago`;
+    if (days === 0) return 'Expires today!';
+    return `Expires in ${days} day${days !== 1 ? 's' : ''}`;
+  };
+
+  /** Returns bg/border/text color triplet for the service alert card. */
+  const serviceAlertTheme = (km: number) => {
+    if (km <= 0)   return { bg: colors.dangerLight,  border: colors.danger,  text: colors.danger };
+    if (km <= 500) return { bg: colors.warningLight, border: colors.warning, text: colors.warning };
+    return           { bg: colors.successLight, border: colors.success, text: colors.success };
+  };
+
+  /** Returns the service km alert body text. */
+  const serviceAlertText = (km: number): string =>
+    km <= 0
+      ? `🔧 Service overdue by ${Math.abs(Math.round(km)).toLocaleString('en-IN')} km`
+      : `🔧 Next service in ${Math.round(km).toLocaleString('en-IN')} km`;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
         {/* ── Vehicle Context Header ── */}
         <VehicleContextHeader />
@@ -132,7 +182,7 @@ export default function HomeScreen() {
         </View>
 
         {/* ── Mileage Card ── */}
-        <View style={[styles.card, styles.mileageCard, { backgroundColor: colors.primary }]}>
+        <View style={[styles.mileageCard, { backgroundColor: colors.primary }]}>
           {stats.lastFillMileage ? (
             <>
               <Text style={[styles.mileageLabel, { color: 'rgba(255,255,255,0.8)' }]}>
@@ -169,6 +219,52 @@ export default function HomeScreen() {
           )}
         </View>
 
+        {/* ── Estimated Fuel Level Bar ── */}
+        {fuelLevel !== null && (
+          <View style={[styles.fuelBarCard, { backgroundColor: colors.surface, ...Sizing.cardShadow }]}>
+            <View style={styles.fuelBarHeader}>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>⛽ Est. Fuel Level</Text>
+              <Text style={[Typography.bodySmall, { color: fuelLevel.color, fontWeight: '700' }]}>
+                {fuelLevel.percent.toFixed(0)}%
+              </Text>
+            </View>
+
+            {/* 5-segment bar — bars=0 shows all grey (truly empty) */}
+            <View style={styles.fuelBarsRow}>
+              {[1, 2, 3, 4, 5].map((bar) => (
+                <View
+                  key={bar}
+                  style={[
+                    styles.fuelBarSegment,
+                    { backgroundColor: bar <= fuelLevel.bars ? fuelLevel.color : colors.border },
+                  ]}
+                />
+              ))}
+            </View>
+
+            {/* Labels row */}
+            <View style={styles.fuelBarLabels}>
+              <Text style={[Typography.caption, { color: colors.textTertiary }]}>Empty</Text>
+              <Text style={[Typography.caption, { color: fuelLevel.color, fontWeight: '600' }]}>
+                {fuelLevel.label}{fuelLevel.bars <= 1 ? ' ⚠️' : fuelLevel.bars === 5 ? ' ✅' : ''}
+              </Text>
+              <Text style={[Typography.caption, { color: colors.textTertiary }]}>Full</Text>
+            </View>
+
+            <Text style={[Typography.caption, { color: colors.textTertiary, marginTop: Spacing.xs }]}>
+              Est. based on avg mileage · Tank: {selectedVehicle.tank_capacity}L
+            </Text>
+          </View>
+        )}
+
+        {/* ── Fuel level fallback tip ── */}
+        {fuelLevelTip && (
+          <View style={[styles.fuelBarCard, { backgroundColor: colors.surface, ...Sizing.cardShadow }]}>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>⛽ Est. Fuel Level</Text>
+            <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>{fuelLevelTip}</Text>
+          </View>
+        )}
+
         {/* ── Document Expiry Warnings ── */}
         {expiringDocs.length > 0 && (
           <TouchableOpacity
@@ -184,7 +280,7 @@ export default function HomeScreen() {
               const label = DOCUMENT_TYPE_LABELS[doc.type as keyof typeof DOCUMENT_TYPE_LABELS] || doc.type;
               return (
                 <Text key={doc.id} style={[Typography.bodySmall, { color: colors.danger }]}>
-                  {label}: {days < 0 ? `Expired ${Math.abs(days)} days ago` : days === 0 ? 'Expires today!' : `Expires in ${days} days`}
+                  {label}: {docExpiryText(days)}
                 </Text>
               );
             })}
@@ -233,25 +329,20 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* ── Km Until Service (if applicable) ── */}
-        {kmUntilService !== null && (
-          <View style={[styles.serviceAlert, {
-            backgroundColor: kmUntilService <= 0 ? colors.dangerLight : kmUntilService <= 500 ? colors.warningLight : colors.successLight,
-            borderColor: kmUntilService <= 0 ? colors.danger : kmUntilService <= 500 ? colors.warning : colors.success,
-          }]}>
-            <Text style={[Typography.body, {
-              color: kmUntilService <= 0 ? colors.danger : kmUntilService <= 500 ? colors.warning : colors.success,
-              fontWeight: '700',
-            }]}>
-              {kmUntilService <= 0
-                ? `🔧 Service overdue by ${Math.abs(Math.round(kmUntilService))} km`
-                : `🔧 Next service in ${Math.round(kmUntilService).toLocaleString('en-IN')} km`}
-            </Text>
-          </View>
-        )}
+        {/* ── Km Until Service ── */}
+        {kmUntilService !== null && (() => {
+          const theme = serviceAlertTheme(kmUntilService);
+          return (
+            <View style={[styles.serviceAlert, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+              <Text style={[Typography.body, { color: theme.text, fontWeight: '700' }]}>
+                {serviceAlertText(kmUntilService)}
+              </Text>
+            </View>
+          );
+        })()}
 
         {/* ── Tyre Pressure Recommendation ── */}
-        {(selectedVehicle.front_tyre_pressure || selectedVehicle.rear_tyre_pressure) && (
+        {(selectedVehicle.front_tyre_pressure != null || selectedVehicle.rear_tyre_pressure != null) && (
           <View style={[styles.tyrePressureCard, { backgroundColor: colors.surface, ...Sizing.cardShadow }]}>
             <Text style={[styles.statLabel, { color: colors.textSecondary, marginBottom: Spacing.sm }]}>
               🚨 Recommended Tyre Pressure
@@ -261,7 +352,7 @@ export default function HomeScreen() {
                 <View style={styles.tyrePressureItem}>
                   <Text style={[Typography.caption, { color: colors.textTertiary }]}>Front</Text>
                   <Text style={[Typography.statMedium, { color: colors.text }]}>
-                    {selectedVehicle.front_tyre_pressure} PSI
+                    {convertPressure(selectedVehicle.front_tyre_pressure)} {getPressureLabel()}
                   </Text>
                 </View>
               )}
@@ -269,7 +360,7 @@ export default function HomeScreen() {
                 <View style={styles.tyrePressureItem}>
                   <Text style={[Typography.caption, { color: colors.textTertiary }]}>Rear</Text>
                   <Text style={[Typography.statMedium, { color: colors.text }]}>
-                    {selectedVehicle.rear_tyre_pressure} PSI
+                    {convertPressure(selectedVehicle.rear_tyre_pressure)} {getPressureLabel()}
                   </Text>
                 </View>
               )}
@@ -285,6 +376,10 @@ export default function HomeScreen() {
             </Text>
             {entries.slice(0, 5).map((entry) => {
               const estimate = partialEstimates[entry.id];
+              // Resolve unit label once per entry (e.g. "km/L", "km/kg", "km/kWh")
+              const mileageUnitLabel = entry.mileage_unit
+                ? MILEAGE_UNIT_LABELS[entry.mileage_unit]
+                : '';
               return (
                 <View
                   key={entry.id}
@@ -300,17 +395,20 @@ export default function HomeScreen() {
                   </View>
                   <View style={styles.entryRight}>
                     {entry.calculated_mileage ? (
+                      // Accurate mileage — show value + unit
                       <Text style={[Typography.body, { color: colors.success, fontWeight: '700' }]}>
-                        {entry.calculated_mileage.toFixed(1)}
+                        {entry.calculated_mileage.toFixed(1)} {mileageUnitLabel}
                       </Text>
                     ) : estimate ? (
+                      // Estimated (partial fill) — show with ~ prefix and est. label
                       <>
                         <Text style={[Typography.body, { color: colors.warning, fontWeight: '700' }]}>
-                          ~{estimate.value.toFixed(1)}
+                          ~{estimate.value.toFixed(1)} {MILEAGE_UNIT_LABELS[estimate.unit]}
                         </Text>
                         <Text style={[Typography.caption, { color: colors.textTertiary }]}>est.</Text>
                       </>
                     ) : (
+                      // First fill or partial with no prior full tank
                       <Text style={[Typography.bodySmall, { color: colors.textTertiary }]}>
                         {entry.is_full_tank === 1 ? '—' : 'Partial'}
                       </Text>
@@ -351,12 +449,10 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xl,
   },
   // ── Mileage Card ──
-  card: {
+  mileageCard: {
     borderRadius: Sizing.radiusLg,
     padding: Spacing.xxl,
     marginBottom: Spacing.lg,
-  },
-  mileageCard: {
     minHeight: 140,
     justifyContent: 'center',
   },
@@ -384,6 +480,33 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: Spacing.xs,
+  },
+  // ── Fuel Bar ──
+  fuelBarCard: {
+    borderRadius: Sizing.radiusMd,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  fuelBarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  fuelBarsRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginBottom: Spacing.xs,
+  },
+  fuelBarSegment: {
+    flex: 1,
+    height: 20,
+    borderRadius: 4,
+  },
+  fuelBarLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: Spacing.xs,
   },
   // ── Service Alert ──
   serviceAlert: {

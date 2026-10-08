@@ -38,6 +38,7 @@ import { FormHeader } from '@/components/FormHeader';
 import { NoVehicleState } from '@/components/NoVehicleState';
 import { VehicleContextHeader } from '@/components/VehicleContextHeader';
 import * as serviceRepo from '@/database/repositories/serviceRepo';
+import { getCurrencySymbol } from '@/stores/preferencesStore';
 
 export default function AddServiceScreen() {
   const colors = useThemeColors();
@@ -221,7 +222,7 @@ export default function AddServiceScreen() {
         />
 
         {/* ── Cost ── */}
-        <Text style={[styles.label, { color: colors.textSecondary }]}>Cost (₹)</Text>
+        <Text style={[styles.label, { color: colors.textSecondary }]}>Cost ({getCurrencySymbol()})</Text>
         <TextInput
           style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
           placeholder="e.g., 2500"

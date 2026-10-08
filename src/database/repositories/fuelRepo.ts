@@ -150,6 +150,27 @@ export function getFuelEntryBeforeDate(vehicleId: string, isoDate: string): Fuel
   );
 }
 
+/**
+ * Returns distinct fuel station names the user has previously entered,
+ * across all vehicles, most-used first (ties broken by most recent use).
+ * Powers the station autocomplete chips on the fuel entry form.
+ *
+ * @param limit - Max number of stations to return (default 20)
+ */
+export function getFrequentFuelStations(limit: number = 20): string[] {
+  const db = getDatabase();
+  const rows = db.getAllSync<{ fuel_station: string }>(
+    `SELECT TRIM(fuel_station) AS fuel_station
+     FROM fuel_entries
+     WHERE deleted_at IS NULL AND fuel_station IS NOT NULL AND TRIM(fuel_station) != ''
+     GROUP BY LOWER(TRIM(fuel_station))
+     ORDER BY COUNT(*) DESC, MAX(date) DESC
+     LIMIT ?`,
+    [limit]
+  );
+  return rows.map((r) => r.fuel_station);
+}
+
 // ─── UPDATE ──────────────────────────────────────────────────────────
 
 /**

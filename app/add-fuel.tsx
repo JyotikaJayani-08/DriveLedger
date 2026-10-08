@@ -23,7 +23,7 @@
  *   - Errors block save entirely
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -53,6 +53,7 @@ import {
 import { todayISO } from '@/utils/date';
 import { displayToISO, isoToDisplay, formatDateInput, validateDateDisplay } from '@/utils/dateInput';
 import { formatMileage } from '@/utils/format';
+import { getCurrencySymbol } from '@/stores/preferencesStore';
 import { validateFuelEntry, hasWarningsOnly } from '@/engine/validationEngine';
 import { recalculateAllMileage } from '@/engine/mileageEngine';
 import { FormHeader } from '@/components/FormHeader';
@@ -85,6 +86,15 @@ export default function AddFuelScreen() {
   const [notes, setNotes] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
+
+  // Previously used stations (loaded once per form open)
+  const knownStations = useMemo(() => fuelRepo.getFrequentFuelStations(), []);
+  const stationSuggestions = useMemo(() => {
+    const query = fuelStation.trim().toLowerCase();
+    return knownStations
+      .filter((s) => s.toLowerCase() !== query && (!query || s.toLowerCase().includes(query)))
+      .slice(0, 5);
+  }, [knownStations, fuelStation]);
 
   // Initialize date display
   useEffect(() => {
@@ -367,7 +377,7 @@ export default function AddFuelScreen() {
 
         {/* ── Price Per Unit ── */}
         <Text style={[styles.label, { color: colors.textSecondary }]}>
-          Price per {fuelUnitLabel} (₹) *
+          Price per {fuelUnitLabel} ({getCurrencySymbol()}) *
         </Text>
         <TextInput
           style={[styles.input, styles.inputLarge, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
@@ -383,7 +393,7 @@ export default function AddFuelScreen() {
           <View style={[styles.totalCostCard, { backgroundColor: colors.primaryLight }]}>
             <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>Total Cost</Text>
             <Text style={[Typography.statMedium, { color: colors.primary }]}>
-              ₹{totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {getCurrencySymbol()}{totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
           </View>
         )}
@@ -417,6 +427,25 @@ export default function AddFuelScreen() {
           value={fuelStation}
           onChangeText={setFuelStation}
         />
+        {stationSuggestions.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.suggestionRow}
+          >
+            {stationSuggestions.map((station) => (
+              <TouchableOpacity
+                key={station}
+                activeOpacity={0.7}
+                onPress={() => setFuelStation(station)}
+                style={[styles.suggestionChip, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              >
+                <Text style={[Typography.caption, { color: colors.primary }]}>⛽ {station}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
 
         {/* ── Receipt Photo (M-06) ── */}
         <Text style={[styles.label, { color: colors.textSecondary }]}>Receipt Photo (optional)</Text>
@@ -594,5 +623,16 @@ const styles = StyleSheet.create({
     borderRadius: Sizing.radiusMd,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  // ── Station suggestions ──
+  suggestionRow: {
+    gap: Spacing.sm,
+    paddingTop: Spacing.sm,
+  },
+  suggestionChip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Sizing.radiusFull,
+    borderWidth: 1,
   },
 });

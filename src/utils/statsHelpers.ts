@@ -1,7 +1,8 @@
 /**
  * Stats Helpers
  *
- * Shared computation functions for monthly cost breakdowns.
+ * Shared computation functions for monthly cost breakdowns
+ * and fuel level estimation.
  * Extracted from dashboard (index.tsx) and stats screen (stats.tsx)
  * where the same filter-reduce pattern was duplicated.
  */
@@ -9,6 +10,100 @@
 import type { FuelEntry } from '@/types/fuel';
 import type { ServiceRecord } from '@/types/service';
 import type { Expense } from '@/types/expense';
+
+// ─── Fuel Level Estimation ───────────────────────────────────────────
+
+export interface FuelLevelResult {
+  /** Estimated fuel remaining as a percentage (0–100). */
+  percent: number;
+  /**
+   * Number of filled bars to display out of 5.
+   * 0 = empty (show all grey), 5 = full.
+   */
+  bars: number;
+  /** Display label for the current level. */
+  label: 'Empty' | 'Very Low' | 'Low' | 'Half' | 'Good' | 'Full';
+  /** Hex color string for the bar and label. */
+  color: string;
+}
+
+/**
+ * Estimates the vehicle's current fuel level as a percentage.
+ *
+ * ALGORITHM:
+ *   1. Walk entries newest → oldest to find the last full-tank fill.
+ *   2. Record the odometer at that full-tank fill.
+ *   3. Sum any partial fills added AFTER the full tank (they increase remaining fuel).
+ *   4. Use the current odometer to calculate km driven since the full fill.
+ *   5. If running average mileage is known:
+ *        estimated consumed = km_driven / avg_mileage_km_per_litre
+ *        remaining = tank_capacity + partials_added - consumed
+ *   6. If no mileage available, we cannot estimate accurately → return null.
+ *
+ * NOTE: This is an approximation. Actual fuel consumption depends on
+ * driving style, terrain, load, A/C usage, etc. Always display with
+ * an "Est." label so users understand it's not a sensor reading.
+ *
+ * @param entries        Fuel entries for the vehicle, newest first (date DESC).
+ * @param tankCapacity   Vehicle's full tank capacity in litres.
+ * @param currentOdometer Vehicle's current odometer reading in km.
+ * @param avgMileage     Running average mileage in km/L (null if not yet calculated).
+ * @returns              FuelLevelResult or null if estimation is not possible.
+ */
+export function estimateFuelLevel(
+  entries: FuelEntry[],
+  tankCapacity: number | null,
+  currentOdometer: number | null,
+  avgMileage: number | null
+): FuelLevelResult | null {
+  // Cannot estimate without tank capacity or entries
+  if (!tankCapacity || tankCapacity <= 0 || entries.length === 0) return null;
+  // Cannot estimate consumption without odometer and mileage
+  if (!currentOdometer || !avgMileage || avgMileage <= 0) return null;
+
+  // Walk newest → oldest to find the last full-tank fill
+  let lastFullTankOdometer: number | null = null;
+  let partialsAddedAfterFull = 0;
+
+  for (const entry of entries) {
+    if (entry.is_full_tank === 1) {
+      lastFullTankOdometer = entry.odometer;
+      break; // stop at first (newest) full tank
+    }
+    // Partial fill AFTER the last full tank — it added fuel to the tank
+    partialsAddedAfterFull += entry.fuel_amount;
+  }
+
+  // If no full-tank entry exists, we have no reliable reference point
+  if (lastFullTankOdometer === null) return null;
+
+  // Distance driven since the last full tank
+  const kmSinceFull = currentOdometer - lastFullTankOdometer;
+  if (kmSinceFull < 0) return null; // odometer inconsistency
+
+  // Fuel consumed since the last full tank (using running average)
+  const estimatedConsumed = kmSinceFull / avgMileage;
+
+  // Remaining = started full + topped up with partials - consumed
+  const remaining = tankCapacity + partialsAddedAfterFull - estimatedConsumed;
+  const percent = Math.min(100, Math.max(0, (remaining / tankCapacity) * 100));
+
+  // Convert to 0–5 bars (0 = truly empty)
+  const bars = Math.min(5, Math.round((percent / 100) * 5)) as 0 | 1 | 2 | 3 | 4 | 5;
+
+  // Label and color per bar count
+  const LEVEL_MAP: Record<number, { label: FuelLevelResult['label']; color: string }> = {
+    0: { label: 'Empty',    color: '#EF4444' },
+    1: { label: 'Very Low', color: '#EF4444' },
+    2: { label: 'Low',      color: '#F97316' },
+    3: { label: 'Half',     color: '#EAB308' },
+    4: { label: 'Good',     color: '#84CC16' },
+    5: { label: 'Full',     color: '#22C55E' },
+  };
+
+  const { label, color } = LEVEL_MAP[bars];
+  return { percent, bars, label, color };
+}
 
 /**
  * Filters records to a specific month/year and sums a numeric field.

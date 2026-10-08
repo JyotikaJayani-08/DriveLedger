@@ -18,6 +18,7 @@
 import { create } from 'zustand';
 import type { Vehicle, CreateVehicleInput, UpdateVehicleInput } from '@/types/vehicle';
 import * as vehicleRepo from '@/database/repositories/vehicleRepo';
+import { getPreferences } from '@/stores/preferencesStore';
 
 interface VehicleState {
   /** All active (non-archived) vehicles */
@@ -54,14 +55,15 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
     try {
       const vehicles = vehicleRepo.getActiveVehicles();
       const currentSelected = get().selectedVehicle;
+      const { defaultVehicleId } = getPreferences();
 
-      // If no vehicle is selected, auto-select the first one
-      // (charter: "Default vehicle auto-selected on app launch")
-      let selected = currentSelected;
+      let selected: Vehicle | null = currentSelected;
+
       if (!selected && vehicles.length > 0) {
-        selected = vehicles[0];
+        // On first load: honour the user's preferred default vehicle, fall back to first
+        selected = vehicles.find((v) => v.id === defaultVehicleId) ?? vehicles[0];
       } else if (selected) {
-        // Refresh the selected vehicle data in case it was updated
+        // Refresh selected vehicle data in case it was edited
         selected = vehicles.find((v) => v.id === selected!.id) ?? vehicles[0] ?? null;
       }
 
