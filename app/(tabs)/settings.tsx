@@ -5,14 +5,20 @@
  * 1. Preferences — currency, distance unit, fuel unit, pressure unit, default vehicle
  * 2. Your Vehicles — view, edit, archive active vehicles
  * 3. Archived Vehicles — restore or permanently remove
- * 4. Data — backup (export JSON) & restore (import JSON)
+ * 4. Data — backup (export .dlbak file) & restore (pick .dlbak file)
  * 5. About — version info, update check, data safety guide
  */
 
 import { FUEL_TYPE_SHORT_LABELS } from '@/constants/fuelTypes';
 import { Sizing, Spacing, Typography } from '@/constants/theme';
 import * as vehicleRepo from '@/database/repositories/vehicleRepo';
-import { backupToJSON, createBackup, restoreFromJSON } from '@/engine/backupEngine';
+import {
+  createBackup,
+  exportToFile,
+  pickAndVerifyBackup,
+  restoreFromValidated,
+  restoreFromJSON,
+} from '@/engine/backupEngine';
 import { buildLedgerCsv } from '@/utils/csvExport';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { checkForAppUpdate, showDataSafetyGuide } from '@/services/updateChecker';
@@ -26,13 +32,12 @@ import type { Vehicle } from '@/types/vehicle';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Modal,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -181,10 +186,10 @@ export default function SettingsScreen() {
   const setDefaultVehicleId = usePreferencesStore((s) => s.setDefaultVehicleId);
 
   // Local UI state
-  const [showRestoreModal, setShowRestoreModal] = useState(false);
-  const [restoreJSON, setRestoreJSON]           = useState('');
   const [archivedVehicles, setArchivedVehicles] = useState<Vehicle[]>([]);
   const [showArchived, setShowArchived]         = useState(false);
+  const [isExporting, setIsExporting]           = useState(false);
+  const [isImporting, setIsImporting]           = useState(false);
 
   // Option picker visibility
   const [pickerCurrency,   setPickerCurrency]   = useState(false);
@@ -215,22 +220,25 @@ export default function SettingsScreen() {
     ...vehicles.map((v) => ({ value: v.id, label: `${v.nickname} · ${v.registration_number}` })),
   ];
 
-  // ── Backup ──
-  const handleBackup = () => {
-    const result = createBackup();
-    if (result.success && result.backup) {
-      const json = backupToJSON(result.backup);
-      Share.share({ message: json, title: 'DriveLedger Backup' })
-        .catch(() => { /* user cancelled */ });
-    } else {
-      Alert.alert('😨 Backup Failed', `Something went sideways: ${result.message}\n\nMaybe try again in a sec?`);
+  // ── Export — signed .dlbak file ──
+  const handleBackup = async () => {
+    setIsExporting(true);
+    try {
+      const result = await exportToFile();
+      if (!result.success) {
+        Alert.alert('😨 Export Failed', result.message);
+      }
+      // On success the OS share sheet handles user feedback
+    } finally {
+      setIsExporting(false);
     }
   };
 
-  // ── CSV export (spreadsheet-friendly ledger) ──
+  // ── CSV export ──
   const handleExportCsv = () => {
     const result = createBackup();
     if (result.success && result.backup) {
+      const { Share } = require('react-native');
       Share.share({ message: buildLedgerCsv(result.backup.data), title: 'DriveLedger Ledger (CSV)' })
         .catch(() => { /* user cancelled */ });
     } else {
@@ -238,48 +246,52 @@ export default function SettingsScreen() {
     }
   };
 
-  // ── Restore ──
-  const handleRestore = () => {
-    const trimmed = restoreJSON.trim();
-    if (!trimmed) {
-      Alert.alert('🤔 Nothing to Restore', 'Paste your backup JSON first!');
-      return;
-    }
+  // ── Import — pick + verify + confirm + restore ──
+  const handleImport = async () => {
+    setIsImporting(true);
     try {
-      const parsed = JSON.parse(trimmed);
-      if (!parsed || typeof parsed !== 'object' || !parsed.data) {
-        Alert.alert('😕 That Doesn\'t Look Right', 'This doesn\'t look like a DriveLedger backup.\n\nMake sure you paste the complete JSON that was shared from the app.');
+      const verified = await pickAndVerifyBackup();
+
+      if (!verified.success || !verified.backup) {
+        // User cancelled picker → silent; any real error → alert
+        if (verified.message !== 'No file selected.') {
+          Alert.alert('🚫 Cannot Restore', verified.message);
+        }
         return;
       }
-    } catch {
-      Alert.alert('🤨 Not Valid JSON', 'The text you pasted isn\'t valid JSON. Copy the entire backup text including the opening { and closing }.');
-      return;
-    }
-    Alert.alert(
-      '⚠️ Replace Everything?',
-      'This will WIPE your current data and restore from the backup.\n\nThere\'s no undo!',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Yes, Restore!',
-          style: 'destructive',
-          onPress: () => {
-            const result = restoreFromJSON(trimmed);
-            if (result.success && result.counts) {
-              setShowRestoreModal(false);
-              setRestoreJSON('');
-              loadVehicles();
-              Alert.alert(
-                '🎉 Data Restored!',
-                `Everything's back!\n\n🚗 ${result.counts.vehicles} vehicle(s)\n⛽ ${result.counts.fuel_entries} fuel entries\n🔧 ${result.counts.service_records} service records\n💸 ${result.counts.expenses} expenses\n📄 ${result.counts.documents} documents\n\nWelcome back! 😄`
-              );
-            } else {
-              Alert.alert('😨 Restore Failed', result.message);
-            }
+
+      const { backup, isLegacy } = verified;
+      const legacyNote = isLegacy
+        ? '\n\n⚠️ Legacy backup (no security signature). Import with caution.'
+        : '';
+
+      // Show a summary and ask for confirmation before wiping the DB
+      Alert.alert(
+        '⚠️ Replace All Data?',
+        `This will PERMANENTLY WIPE your current data and restore from the selected backup.${legacyNote}\n\nBackup contains:\n🚗 ${backup.data.vehicles.length} vehicle(s)\n⛽ ${backup.data.fuel_entries.length} fuel entries\n🔧 ${backup.data.service_records.length} service records\n💸 ${backup.data.expenses.length} expenses\n📄 ${backup.data.documents.length} documents\n\nThere is NO UNDO. Continue?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Yes, Restore!',
+            style: 'destructive',
+            onPress: () => {
+              const result = restoreFromValidated(backup);
+              if (result.success && result.counts) {
+                loadVehicles();
+                Alert.alert(
+                  '🎉 Data Restored!',
+                  `Everything's back!\n\n🚗 ${result.counts.vehicles} vehicle(s)\n⛽ ${result.counts.fuel_entries} fuel entries\n🔧 ${result.counts.service_records} service records\n💸 ${result.counts.expenses} expenses\n📄 ${result.counts.documents} documents\n\nWelcome back! 😄`
+                );
+              } else {
+                Alert.alert('😨 Restore Failed', result.message);
+              }
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   // ── Archive vehicle ──
@@ -467,13 +479,28 @@ export default function SettingsScreen() {
 
           {/* ── Data & Backup ── */}
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Data & Backup</Text>
-          <SettingsRow
-            emoji="💾"
-            title="Create Backup"
-            subtitle="Export all data as JSON — share to Drive, WhatsApp, or Files"
-            colors={colors}
+
+          {/* Export */}
+          <TouchableOpacity
+            style={[styles.dataRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={handleBackup}
-          />
+            activeOpacity={0.75}
+            disabled={isExporting}
+          >
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontSize: 20 }}>💾</Text>
+                <Text style={[Typography.body, { color: colors.text, fontWeight: '600' }]}>Download Backup</Text>
+                {isExporting && <ActivityIndicator size="small" color={colors.primary} />}
+              </View>
+              <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginTop: 2, marginLeft: 28 }]}>
+                Saves a signed .dlbak file — only DriveLedger can restore it
+              </Text>
+            </View>
+            <Text style={{ color: colors.primary, fontSize: 20 }}>⬇️</Text>
+          </TouchableOpacity>
+
+          {/* CSV Export */}
           <SettingsRow
             emoji="📊"
             title="Export as CSV"
@@ -481,13 +508,26 @@ export default function SettingsScreen() {
             colors={colors}
             onPress={handleExportCsv}
           />
-          <SettingsRow
-            emoji="📥"
-            title="Restore from Backup"
-            subtitle="Import a backup JSON — replaces all current data"
-            colors={colors}
-            onPress={() => setShowRestoreModal(true)}
-          />
+
+          {/* Import */}
+          <TouchableOpacity
+            style={[styles.dataRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={handleImport}
+            activeOpacity={0.75}
+            disabled={isImporting}
+          >
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontSize: 20 }}>📥</Text>
+                <Text style={[Typography.body, { color: colors.text, fontWeight: '600' }]}>Restore from Backup</Text>
+                {isImporting && <ActivityIndicator size="small" color={colors.primary} />}
+              </View>
+              <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginTop: 2, marginLeft: 28 }]}>
+                Browse & pick a .dlbak file — signature is verified before restore
+              </Text>
+            </View>
+            <Text style={{ color: colors.textSecondary, fontSize: 18 }}>📂</Text>
+          </TouchableOpacity>
 
           {/* ── About ── */}
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>About</Text>
@@ -523,44 +563,7 @@ export default function SettingsScreen() {
         </View>
       </ScrollView>
 
-      {/* ── Restore Modal ── */}
-      <Modal visible={showRestoreModal} animationType="slide" transparent>
-        <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
-          <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
-            <Text style={[Typography.h2, { color: colors.text, marginBottom: Spacing.sm }]}>
-              Restore from Backup
-            </Text>
-            <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginBottom: Spacing.lg }]}>
-              Paste the complete backup JSON below.{'\n'}
-              <Text style={{ color: colors.danger, fontWeight: '600' }}>⚠️ This replaces ALL existing data.</Text>
-            </Text>
-            <TextInput
-              style={[styles.restoreInput, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-              placeholder={'Paste backup JSON here...\n\n(The full text starting with { and ending with })'}
-              placeholderTextColor={colors.textTertiary}
-              value={restoreJSON}
-              onChangeText={setRestoreJSON}
-              multiline
-              numberOfLines={8}
-              textAlignVertical="top"
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}
-                onPress={() => { setShowRestoreModal(false); setRestoreJSON(''); }}
-              >
-                <Text style={[Typography.button, { color: colors.text }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.danger }]}
-                onPress={handleRestore}
-              >
-                <Text style={[Typography.button, { color: '#FFFFFF' }]}>Restore Data</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* Restore modal removed — now uses file picker flow directly */}
 
       {/* ── Preference Pickers ── */}
       <OptionPicker<CurrencyCode>
@@ -683,22 +686,18 @@ const styles = StyleSheet.create({
     minHeight: Sizing.primaryButton, marginBottom: Spacing.sm,
   },
   archivedToggle: { paddingVertical: Spacing.md, paddingHorizontal: Spacing.sm, marginBottom: Spacing.sm },
-  // ── Modal ──
+  // ── Data rows (export / import cards) ──
+  dataRow: {
+    flexDirection: 'row', alignItems: 'center', padding: Spacing.lg,
+    borderRadius: Sizing.radiusMd, borderWidth: 1, marginBottom: Spacing.sm,
+    minHeight: Sizing.primaryButton,
+  },
+  // ── Modal (kept for vehicle picker overlay etc.) ──
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   modalContent: {
     borderTopLeftRadius: Sizing.radiusXl, borderTopRightRadius: Sizing.radiusXl,
     padding: Spacing.xxl, paddingBottom: Spacing.section,
     maxHeight: '85%',
-  },
-  restoreInput: {
-    borderRadius: Sizing.radiusMd, borderWidth: 1.5,
-    padding: Spacing.lg, fontSize: 13, fontFamily: 'monospace',
-    minHeight: 160,
-  },
-  modalButtons: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.xl },
-  modalButton: {
-    flex: 1, height: Sizing.primaryButton,
-    borderRadius: Sizing.radiusMd, justifyContent: 'center', alignItems: 'center',
   },
 });
 
