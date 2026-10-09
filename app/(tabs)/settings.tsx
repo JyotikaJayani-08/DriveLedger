@@ -494,7 +494,7 @@ export default function SettingsScreen() {
                 {isExporting && <ActivityIndicator size="small" color={colors.primary} />}
               </View>
               <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginTop: 2, marginLeft: 28 }]}>
-                Saves a signed .dlbak file - only DriveLedger can restore it
+                Saves an encrypted .dlbak file - only DriveLedger can restore it
               </Text>
             </View>
             <Text style={{ color: colors.primary, fontSize: 20 }}>⬇️</Text>
@@ -700,4 +700,3 @@ const styles = StyleSheet.create({
     maxHeight: '85%',
   },
 });
-

@@ -64,6 +64,19 @@ const SIGNING_KEY = 'DriveLedger$SecretKey#2026!v1';
 /** File extension used for backup files. */
 const BACKUP_EXT = '.dlbak';
 
+/** Deliberately unassociated type: backups are opaque DriveLedger files. */
+const BACKUP_MIME_TYPE = 'application/vnd.driveledger.dlbak';
+
+const ENCRYPTED_BACKUP_FORMAT = 'driveledger.encrypted-backup';
+const ENCRYPTED_BACKUP_VERSION = 1;
+
+interface EncryptedBackupEnvelope {
+  format: typeof ENCRYPTED_BACKUP_FORMAT;
+  version: typeof ENCRYPTED_BACKUP_VERSION;
+  algorithm: 'AES-256-GCM';
+  ciphertext: string;
+}
+
 // ─── Types ───────────────────────────────────────────────────────────
 
 export interface BackupData {
@@ -185,6 +198,42 @@ async function hmacVerify(message: string, expectedHex: string): Promise<boolean
   } catch {
     return false;
   }
+}
+
+/** Returns the deterministic AES-256 key used for portable .dlbak files. */
+async function getBackupEncryptionKey(): Promise<Crypto.AESEncryptionKey> {
+  const keyMaterial = new TextEncoder().encode(`${APP_ID}:${SIGNING_KEY}:backup-encryption:v1`);
+  const keyBytes = await sha256Bytes(keyMaterial);
+  return await Crypto.AESEncryptionKey.import(keyBytes) as Crypto.AESEncryptionKey;
+}
+
+async function encryptBackup(plaintext: string): Promise<string> {
+  const key = await getBackupEncryptionKey();
+  const sealed = await Crypto.aesEncryptAsync(new TextEncoder().encode(plaintext), key);
+  const ciphertext = await sealed.combined('base64') as string;
+  const envelope: EncryptedBackupEnvelope = {
+    format: ENCRYPTED_BACKUP_FORMAT,
+    version: ENCRYPTED_BACKUP_VERSION,
+    algorithm: 'AES-256-GCM',
+    ciphertext,
+  };
+  return JSON.stringify(envelope);
+}
+
+function isEncryptedBackupEnvelope(value: unknown): value is EncryptedBackupEnvelope {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const envelope = value as Record<string, unknown>;
+  return envelope.format === ENCRYPTED_BACKUP_FORMAT
+    && envelope.version === ENCRYPTED_BACKUP_VERSION
+    && envelope.algorithm === 'AES-256-GCM'
+    && typeof envelope.ciphertext === 'string';
+}
+
+async function decryptBackup(envelope: EncryptedBackupEnvelope): Promise<string> {
+  const key = await getBackupEncryptionKey();
+  const sealed = Crypto.AESSealedData.fromCombined(envelope.ciphertext);
+  const plaintext = await Crypto.aesDecryptAsync(sealed, key, { output: 'bytes' }) as Uint8Array;
+  return new TextDecoder().decode(plaintext);
 }
 
 // ─── Schema Validation ───────────────────────────────────────────────
@@ -393,7 +442,15 @@ export async function exportToFile(): Promise<ExportFileResult> {
   };
 
   // 3. Serialise once — used for both the temp write and the SAF write
-  const content = JSON.stringify(signedBackup, null, 2);
+  let content: string;
+  try {
+    content = await encryptBackup(JSON.stringify(signedBackup));
+  } catch (e) {
+    return {
+      success: false,
+      message: `Could not encrypt backup: ${e instanceof Error ? e.message : 'Unknown error'}`,
+    };
+  }
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const filename = `DriveLedger_${timestamp}${BACKUP_EXT}`;
 
@@ -416,7 +473,7 @@ export async function exportToFile(): Promise<ExportFileResult> {
 
     // 5. A SAF directory URI does not permit File.write() to create a child.
     //    Create the child through Directory first, then write to that file.
-    const destFile = destDir.createFile(filename, 'application/json');
+    const destFile = destDir.createFile(filename, BACKUP_MIME_TYPE);
     destFile.write(content);
 
     return {
@@ -437,9 +494,9 @@ export async function exportToFile(): Promise<ExportFileResult> {
       if (canShare) {
         try {
           await Sharing.shareAsync(tempFile.uri, {
-            mimeType: 'application/json',
+            mimeType: BACKUP_MIME_TYPE,
             dialogTitle: 'Save DriveLedger Backup',
-            UTI: 'public.json',
+            UTI: 'public.data',
           });
           return { success: true, message: 'Backup ready to save!', filePath: tempFile.uri };
         } catch (_) {
@@ -500,13 +557,13 @@ export async function pickAndVerifyBackup(): Promise<{
     return { success: false, message: 'Could not open file picker.' };
   }
 
-  // Check extension - warn but don't block .json files
+  // DriveLedger backups are always .dlbak files.
   const name = (pickedFile.name ?? '').toLowerCase();
-  const isOfficialFormat = name.endsWith(BACKUP_EXT) || name.endsWith('.json');
+  const isOfficialFormat = name.endsWith(BACKUP_EXT);
   if (!isOfficialFormat) {
     return {
       success: false,
-      message: `Invalid file type.\n\nDriveLedger backup files end in "${BACKUP_EXT}" or ".json". The file you selected appears to be a different type.`,
+      message: `Invalid file type.\n\nDriveLedger backup files end in "${BACKUP_EXT}". The file you selected appears to be a different type.`,
     };
   }
 
@@ -526,15 +583,31 @@ export async function pickAndVerifyBackup(): Promise<{
     return { success: false, message: 'File is too large to be a valid backup (> 50 MB).' };
   }
 
-  // Parse JSON
+  // Parse the opaque .dlbak envelope. Older .dlbak files are accepted as
+  // plaintext here so existing user backups remain restorable.
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawContent);
   } catch {
     return {
       success: false,
-      message: 'The selected file is not valid JSON.\n\nMake sure you are picking a DriveLedger backup file (not an edited or corrupted file).',
+      message: 'The selected file is not a valid DriveLedger backup.',
     };
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { success: false, message: 'Invalid backup structure.' };
+  }
+
+  if (isEncryptedBackupEnvelope(parsed)) {
+    try {
+      parsed = JSON.parse(await decryptBackup(parsed));
+    } catch {
+      return {
+        success: false,
+        message: 'This encrypted backup cannot be opened. It may be corrupted or was not created by DriveLedger.',
+      };
+    }
   }
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -695,7 +768,10 @@ export function restoreFromValidated(backup: BackupData): RestoreResult {
       );
     }
 
-    // Documents
+    // Documents are inserted first without their self-referencing renewal link.
+    // A document may point to a newer document via superseded_by, so inserting
+    // the link in this pass can violate the foreign key when the newer row has
+    // not been inserted yet.
     for (const d of backup.data.documents) {
       db.runSync(
         `INSERT INTO documents (id, vehicle_id, type, document_number, insurer_name, issue_date,
@@ -704,10 +780,17 @@ export function restoreFromValidated(backup: BackupData): RestoreResult {
         [
           d.id, d.vehicle_id, d.type, d.document_number ?? null, d.insurer_name ?? null,
           d.issue_date ?? null, d.expiry_date ?? null, d.file_uri ?? null,
-          d.superseded_by ?? null, d.notes ?? null,
+          null, d.notes ?? null,
           d.created_at || nowISO(), d.updated_at || nowISO(), d.deleted_at ?? null,
         ]
       );
+    }
+
+    // Now every document ID exists, so renewal relationships are safe to add.
+    for (const d of backup.data.documents) {
+      if (d.superseded_by) {
+        db.runSync('UPDATE documents SET superseded_by = ? WHERE id = ?', [d.superseded_by, d.id]);
+      }
     }
 
     db.execSync('COMMIT');

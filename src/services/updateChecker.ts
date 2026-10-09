@@ -21,7 +21,7 @@ export function showDataSafetyGuide() {
 
     `2. BACK UP JUST IN CASE 💾\n` +
     `• DriveLedger is 100% offline — data lives only on your device.\n` +
-    `• Go to Settings › Export Backup to save a JSON copy to Google Drive or Files.\n\n` +
+    `• Go to Settings › Download Backup to save an encrypted .dlbak file to Google Drive or Files.\n\n` +
 
     `3. USE OFFICIAL BUILDS ONLY ✅\n` +
     `• Install only from official GitHub Releases.\n` +
