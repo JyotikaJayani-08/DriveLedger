@@ -68,13 +68,17 @@ const BACKUP_EXT = '.dlbak';
 const BACKUP_MIME_TYPE = 'application/vnd.driveledger.dlbak';
 
 const ENCRYPTED_BACKUP_FORMAT = 'driveledger.encrypted-backup';
-const ENCRYPTED_BACKUP_VERSION = 1;
+const ENCRYPTED_BACKUP_VERSION = 2;
 
 interface EncryptedBackupEnvelope {
   format: typeof ENCRYPTED_BACKUP_FORMAT;
-  version: typeof ENCRYPTED_BACKUP_VERSION;
+  version: number;
   algorithm: 'AES-256-GCM';
+  /** Present in version 2+ envelopes. */
+  iv?: string;
   ciphertext: string;
+  /** Present in version 2+ envelopes. */
+  tag?: string;
 }
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -190,6 +194,37 @@ function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/** Converts a Base64 string into a Uint8Array across all JS engines. */
+function base64ToUint8Array(base64: string): Uint8Array {
+  if (typeof atob === 'function') {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const lookup = new Uint8Array(256);
+  for (let i = 0; i < chars.length; i++) lookup[chars.charCodeAt(i)] = i;
+  let buffer = 0;
+  let bits = 0;
+  const output: number[] = [];
+  for (let i = 0; i < base64.length; i++) {
+    const char = base64[i];
+    if (char === '=') break;
+    const val = lookup[char.charCodeAt(0)];
+    if (val === undefined) continue;
+    buffer = (buffer << 6) | val;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      output.push((buffer >> bits) & 0xff);
+    }
+  }
+  return new Uint8Array(output);
+}
+
 /** Verifies an HMAC-SHA256 signature. */
 async function hmacVerify(message: string, expectedHex: string): Promise<boolean> {
   try {
@@ -209,13 +244,17 @@ async function getBackupEncryptionKey(): Promise<Crypto.AESEncryptionKey> {
 
 async function encryptBackup(plaintext: string): Promise<string> {
   const key = await getBackupEncryptionKey();
-  const sealed = await Crypto.aesEncryptAsync(new TextEncoder().encode(plaintext), key);
-  const ciphertext = await sealed.combined('base64') as string;
+  const sealed = await Crypto.aesEncryptAsync(new TextEncoder().encode(plaintext), key, {
+    nonce: { length: 12 },
+    tagLength: 16,
+  });
+  // combined('base64') returns a single Base64 string containing: [12-byte IV] || [Ciphertext] || [16-byte Tag]
+  const combinedBase64 = await sealed.combined('base64') as string;
   const envelope: EncryptedBackupEnvelope = {
     format: ENCRYPTED_BACKUP_FORMAT,
     version: ENCRYPTED_BACKUP_VERSION,
     algorithm: 'AES-256-GCM',
-    ciphertext,
+    ciphertext: combinedBase64,
   };
   return JSON.stringify(envelope);
 }
@@ -224,16 +263,43 @@ function isEncryptedBackupEnvelope(value: unknown): value is EncryptedBackupEnve
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const envelope = value as Record<string, unknown>;
   return envelope.format === ENCRYPTED_BACKUP_FORMAT
-    && envelope.version === ENCRYPTED_BACKUP_VERSION
+    && (envelope.version === 1 || envelope.version === ENCRYPTED_BACKUP_VERSION)
     && envelope.algorithm === 'AES-256-GCM'
-    && typeof envelope.ciphertext === 'string';
+    && (typeof envelope.ciphertext === 'string' || typeof envelope.ciphertext === 'object');
 }
 
 async function decryptBackup(envelope: EncryptedBackupEnvelope): Promise<string> {
   const key = await getBackupEncryptionKey();
-  const sealed = Crypto.AESSealedData.fromCombined(envelope.ciphertext);
+  let combinedBytes: Uint8Array;
+
+  if (envelope.iv && envelope.tag) {
+    // Envelope with separate iv, ciphertext, and tag (v2 parts form)
+    const ivBytes = base64ToUint8Array(envelope.iv);
+    const cipherBytes = typeof envelope.ciphertext === 'string'
+      ? base64ToUint8Array(envelope.ciphertext)
+      : new Uint8Array(Object.values(envelope.ciphertext as Record<string, number>));
+    const tagBytes = base64ToUint8Array(envelope.tag);
+    combinedBytes = concatBytes(concatBytes(ivBytes, cipherBytes), tagBytes);
+  } else {
+    // Envelope with combined ciphertext string (v1 standard form)
+    combinedBytes = typeof envelope.ciphertext === 'string'
+      ? base64ToUint8Array(envelope.ciphertext)
+      : new Uint8Array(Object.values(envelope.ciphertext as Record<string, number>));
+  }
+
+  // Passing Uint8Array to fromCombined satisfies Android JNI's ByteArray expectation
+  const sealed = Crypto.AESSealedData.fromCombined(combinedBytes, { ivLength: 12, tagLength: 16 });
   const plaintext = await Crypto.aesDecryptAsync(sealed, key, { output: 'bytes' }) as Uint8Array;
   return new TextDecoder().decode(plaintext);
+}
+
+/** Throws unless an encrypted envelope can be decrypted and parsed again. */
+async function verifyEncryptedBackup(content: string): Promise<void> {
+  const parsed: unknown = JSON.parse(content);
+  if (!isEncryptedBackupEnvelope(parsed)) {
+    throw new Error('Invalid encrypted backup envelope');
+  }
+  JSON.parse(await decryptBackup(parsed));
 }
 
 // ─── Schema Validation ───────────────────────────────────────────────
@@ -445,6 +511,7 @@ export async function exportToFile(): Promise<ExportFileResult> {
   let content: string;
   try {
     content = await encryptBackup(JSON.stringify(signedBackup));
+    await verifyEncryptedBackup(content);
   } catch (e) {
     return {
       success: false,
@@ -475,6 +542,8 @@ export async function exportToFile(): Promise<ExportFileResult> {
     //    Create the child through Directory first, then write to that file.
     const destFile = destDir.createFile(filename, BACKUP_MIME_TYPE);
     destFile.write(content);
+    // Confirm the document provider saved bytes that DriveLedger can decrypt.
+    await verifyEncryptedBackup(await destFile.text());
 
     return {
       success: true,
@@ -602,10 +671,11 @@ export async function pickAndVerifyBackup(): Promise<{
   if (isEncryptedBackupEnvelope(parsed)) {
     try {
       parsed = JSON.parse(await decryptBackup(parsed));
-    } catch {
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
       return {
         success: false,
-        message: 'This encrypted backup cannot be opened. It may be corrupted or was not created by DriveLedger.',
+        message: `This encrypted backup cannot be opened (${detail}). It may be corrupted or was not created by DriveLedger.`,
       };
     }
   }
