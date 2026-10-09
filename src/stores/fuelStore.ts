@@ -127,8 +127,14 @@ export const useFuelStore = create<FuelState>((set) => ({
       }
     }
 
-    // 5. Update vehicle's current_odometer
-    vehicleRepo.updateVehicleOdometer(vehicle.id, input.odometer);
+    // 5. Update vehicle's current_odometer to the HIGHEST odometer across all entries
+    // (not just this entry — user may be logging a past fill at a lower reading)
+    const highestOdometer = chronological.reduce(
+      (max, e) => Math.max(max, e.odometer),
+      0
+    );
+    vehicleRepo.updateVehicleOdometer(vehicle.id, highestOdometer);
+
 
     // 6. Refresh state
     const entries = fuelRepo.getFuelEntriesByVehicle(vehicle.id);

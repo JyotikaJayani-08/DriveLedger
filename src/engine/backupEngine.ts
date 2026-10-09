@@ -44,8 +44,8 @@ import type { FuelEntry } from '@/types/fuel';
 import type { ServiceRecord } from '@/types/service';
 import type { Vehicle } from '@/types/vehicle';
 import { nowISO } from '@/utils/date';
-import * as DocumentPicker from 'expo-document-picker';
-import { File, Paths } from 'expo-file-system';
+import * as Crypto from 'expo-crypto';
+import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 // ─── Constants ───────────────────────────────────────────────────────
@@ -116,61 +116,72 @@ export interface ImportFileResult {
   counts?: RestoreResult['counts'];
 }
 
-// ─── HMAC helpers (Web Crypto API — available on Hermes in RN) ───────
+// ─── HMAC-SHA256 (built on expo-crypto — works on Hermes) ────────────
+//
+// Hermes doesn't expose crypto.subtle, so HMAC is implemented manually:
+//   HMAC(K, m) = SHA256((K XOR opad) || SHA256((K XOR ipad) || m))
+// using expo-crypto's byte-level `digest()` so no binary data is ever
+// round-tripped through UTF-8 strings.
 
-/** Converts a hex string to a Uint8Array. */
-function hexToBytes(hex: string): Uint8Array {
-  const arr = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < arr.length; i++) {
-    arr[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+const BLOCK_SIZE = 64; // SHA-256 block size in bytes
+
+/** SHA-256 of raw bytes. */
+async function sha256Bytes(data: Uint8Array): Promise<Uint8Array> {
+  const buf = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, data as unknown as ArrayBuffer);
+  return new Uint8Array(buf);
+}
+
+function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a, 0);
+  out.set(b, a.length);
+  return out;
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  let hex = '';
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, '0');
   }
-  return arr;
+  return hex;
 }
 
-/** Converts a Uint8Array to a lowercase hex string. */
-function bytesToHex(buf: ArrayBuffer): string {
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-/** Derives an HMAC-SHA256 hex string over `message` using `SIGNING_KEY`. */
+/** Derives the HMAC-SHA256 hex of `message` using `SIGNING_KEY`. */
 async function hmacSign(message: string): Promise<string> {
   const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(SIGNING_KEY),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
-  return bytesToHex(sig);
+  let key: Uint8Array = enc.encode(SIGNING_KEY);
+  if (key.length > BLOCK_SIZE) key = await sha256Bytes(key);
+
+  const padded = new Uint8Array(BLOCK_SIZE); // zero-filled
+  padded.set(key);
+
+  const ipad = new Uint8Array(BLOCK_SIZE);
+  const opad = new Uint8Array(BLOCK_SIZE);
+  for (let i = 0; i < BLOCK_SIZE; i++) {
+    ipad[i] = padded[i] ^ 0x36;
+    opad[i] = padded[i] ^ 0x5c;
+  }
+
+  const inner = await sha256Bytes(concatBytes(ipad, enc.encode(message)));
+  const outer = await sha256Bytes(concatBytes(opad, inner));
+  return bytesToHex(outer);
 }
 
-/** Constant-time HMAC verification to prevent timing attacks. */
+/** Constant-time string comparison to prevent timing attacks. */
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+/** Verifies an HMAC-SHA256 signature. */
 async function hmacVerify(message: string, expectedHex: string): Promise<boolean> {
   try {
-    const enc = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      'raw',
-      enc.encode(SIGNING_KEY),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['verify']
-    );
-    const expectedBytes = hexToBytes(expectedHex);
-    // Cast to ArrayBuffer to satisfy strict TS lib types
-    const sigBuffer: ArrayBuffer = expectedBytes.buffer.slice(
-      expectedBytes.byteOffset,
-      expectedBytes.byteOffset + expectedBytes.byteLength
-    ) as ArrayBuffer;
-    return await crypto.subtle.verify(
-      'HMAC',
-      key,
-      sigBuffer,
-      enc.encode(message)
-    );
+    const computed = await hmacSign(message);
+    return safeEqual(computed, expectedHex);
   } catch {
     return false;
   }
@@ -342,16 +353,20 @@ export function backupToJSON(backup: BackupData): string {
   return JSON.stringify(backup, null, 2);
 }
 
-// ─── Export — File Download ──────────────────────────────────────────
+// ─── Export — Save to Device ─────────────────────────────────────────
 
 /**
- * Signs and exports backup as a .dlbak file via the OS share sheet.
+ * Signs and exports backup as a .dlbak file.
  *
  * Flow:
  *   1. Read all data from SQLite.
  *   2. Sign data with HMAC-SHA256.
- *   3. Write signed JSON to app's documentDirectory.
- *   4. Open OS share sheet so user can save to Downloads / Drive / etc.
+ *   3. Serialise and write signed JSON to app's private documentDirectory.
+ *   4. Let user pick a destination folder via Directory.pickDirectoryAsync.
+ *   5. Create the file through the chosen directory, then write its content.
+ *      Android SAF tree URIs cannot create a file via `new File(...).write()`;
+ *      Directory.createFile() creates it using the granted directory access.
+ *   Falls back to the OS share sheet if the user cancels the folder picker.
  */
 export async function exportToFile(): Promise<ExportFileResult> {
   // 1. Read data
@@ -377,13 +392,17 @@ export async function exportToFile(): Promise<ExportFileResult> {
     signature,
   };
 
-  // 3. Write file using the new expo-file-system class-based API
+  // 3. Serialise once — used for both the temp write and the SAF write
+  const content = JSON.stringify(signedBackup, null, 2);
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const filename = `DriveLedger_${timestamp}${BACKUP_EXT}`;
-  const file = new File(Paths.document, filename);
 
+  // Write to app's private directory so we always have the file on hand
+  // (also used as the fallback share-sheet source if picker is cancelled)
+  const tempFile = new File(Paths.document, filename);
   try {
-    file.write(JSON.stringify(signedBackup, null, 2));
+    try { tempFile.delete(); } catch (_) { /* didn't exist */ }
+    tempFile.write(content);
   } catch (e) {
     return {
       success: false,
@@ -391,51 +410,72 @@ export async function exportToFile(): Promise<ExportFileResult> {
     };
   }
 
-  // 4. Share via OS sheet
-  const canShare = await Sharing.isAvailableAsync();
-  if (!canShare) {
-    return {
-      success: false,
-      message: 'Sharing is not available on this device.',
-      filePath: file.uri,
-    };
-  }
-
+  // 4. Let user pick a destination folder
   try {
-    await Sharing.shareAsync(file.uri, {
-      mimeType: 'application/json',
-      dialogTitle: 'Save DriveLedger Backup',
-      UTI: 'public.json',
-    });
-    return { success: true, message: 'Backup exported!', filePath: file.uri };
+    const destDir = await Directory.pickDirectoryAsync();
+
+    // 5. A SAF directory URI does not permit File.write() to create a child.
+    //    Create the child through Directory first, then write to that file.
+    const destFile = destDir.createFile(filename, 'application/json');
+    destFile.write(content);
+
+    return {
+      success: true,
+      message: `Backup saved as "${filename}"`,
+      filePath: destFile.uri,
+    };
   } catch (e) {
-    // User cancelled the share sheet — not an error
-    if (
-      e instanceof Error &&
-      (e.message.includes('cancelled') || e.message.includes('User canceled'))
-    ) {
-      return { success: true, message: 'Backup ready (share cancelled by user).', filePath: file.uri };
+    const errMsg = e instanceof Error ? e.message : String(e);
+    const isCancelled =
+      errMsg.includes('cancelled') ||
+      errMsg.includes('canceled') ||
+      errMsg.includes('user canceled');
+
+    if (isCancelled) {
+      // User dismissed picker — offer the file via the share sheet instead
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        try {
+          await Sharing.shareAsync(tempFile.uri, {
+            mimeType: 'application/json',
+            dialogTitle: 'Save DriveLedger Backup',
+            UTI: 'public.json',
+          });
+          return { success: true, message: 'Backup ready to save!', filePath: tempFile.uri };
+        } catch (_) {
+          return { success: true, message: 'Backup created (share cancelled).', filePath: tempFile.uri };
+        }
+      }
+      return { success: true, message: 'Backup created (folder selection cancelled).', filePath: tempFile.uri };
     }
+
+    // Genuine error — report it
     return {
       success: false,
-      message: `Could not share backup file: ${e instanceof Error ? e.message : 'Unknown error'}`,
+      message: `Could not save backup: ${errMsg}`,
     };
   }
 }
 
+
 // ─── Import — File Picker ────────────────────────────────────────────
 
 /**
- * Opens the OS document picker, reads the selected .dlbak file, verifies
- * the HMAC signature, and validates the schema.
+ * Opens the OS file picker (File.pickFileAsync), reads the selected .dlbak
+ * file, verifies the HMAC signature, and validates the schema.
  *
- * Does NOT write to the database — call restoreFromValidated() for that.
+ * Uses expo-file-system's File.pickFileAsync which returns a File instance
+ * the app already has read access to (copied into a temp location by the OS).
+ * This avoids the "missing read permission" error that occurs when trying to
+ * read a content:// URI returned by DocumentPicker.
+ *
+ * Does NOT write to the database - call restoreFromValidated() for that.
  * This separation lets the caller show a confirmation dialog before committing.
  *
- * Security checks (in order — fail-fast):
+ * Security checks (in order, fail-fast):
  *   1. File must be JSON-parseable.
- *   2. `app_id` must equal APP_ID — blocks random JSON files.
- *   3. If `signature` is present, HMAC must match — blocks tampered files.
+ *   2. `app_id` must equal APP_ID - blocks random JSON files.
+ *   3. If `signature` is present, HMAC must match - blocks tampered files.
  *      (Legacy backups without a signature field are accepted with a warning.)
  *   4. Row-level schema validation for every vehicle and fuel entry.
  */
@@ -445,28 +485,23 @@ export async function pickAndVerifyBackup(): Promise<{
   backup?: BackupData;
   isLegacy?: boolean;
 }> {
-  // Open file picker
-  let pickerResult: DocumentPicker.DocumentPickerResult;
+  // Open file picker using the new File.pickFileAsync API
+  // This gives us a File instance the app can read without extra permissions.
+  let pickedFile: File;
   try {
-    pickerResult = await DocumentPicker.getDocumentAsync({
-      type: ['application/json', 'text/plain', '*/*'],
-      copyToCacheDirectory: true,
+    const pickerResult = await File.pickFileAsync({
+      mimeTypes: ['*/*'],
     });
+    if (pickerResult.canceled || !pickerResult.result) {
+      return { success: false, message: 'No file selected.' };
+    }
+    pickedFile = pickerResult.result as File;
   } catch (e) {
     return { success: false, message: 'Could not open file picker.' };
   }
 
-  if (pickerResult.canceled) {
-    return { success: false, message: 'No file selected.' };
-  }
-
-  const asset = pickerResult.assets[0];
-  if (!asset?.uri) {
-    return { success: false, message: 'No file URI returned.' };
-  }
-
-  // Check extension — warn but don't block .json files
-  const name = (asset.name ?? '').toLowerCase();
+  // Check extension - warn but don't block .json files
+  const name = (pickedFile.name ?? '').toLowerCase();
   const isOfficialFormat = name.endsWith(BACKUP_EXT) || name.endsWith('.json');
   if (!isOfficialFormat) {
     return {
@@ -475,10 +510,9 @@ export async function pickAndVerifyBackup(): Promise<{
     };
   }
 
-  // Read file content using the new File class
+  // Read file content - File instance already has read access
   let rawContent: string;
   try {
-    const pickedFile = new File(asset.uri);
     rawContent = await pickedFile.text();
   } catch (e) {
     return {

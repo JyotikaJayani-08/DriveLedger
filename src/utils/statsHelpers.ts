@@ -25,6 +25,10 @@ export interface FuelLevelResult {
   label: 'Empty' | 'Very Low' | 'Low' | 'Half' | 'Good' | 'Full';
   /** Hex color string for the bar and label. */
   color: string;
+  /** Estimated fuel remaining in litres (>= 0). */
+  remainingLitres: number;
+  /** Estimated driving range left in km, based on running average mileage (>= 0). */
+  kmRemaining: number;
 }
 
 /**
@@ -102,7 +106,9 @@ export function estimateFuelLevel(
   };
 
   const { label, color } = LEVEL_MAP[bars];
-  return { percent, bars, label, color };
+  const remainingLitres = Math.max(0, Math.min(tankCapacity, remaining));
+  const kmRemaining = Math.round(remainingLitres * avgMileage);
+  return { percent, bars, label, color, remainingLitres, kmRemaining };
 }
 
 /**

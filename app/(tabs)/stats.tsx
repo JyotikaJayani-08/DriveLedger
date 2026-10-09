@@ -151,6 +151,61 @@ export default function StatsScreen() {
     }, [selectedVehicle?.id])
   );
 
+  // ── Monthly cost chart (respects chartRange toggle) ──
+  // Must be declared BEFORE any early return to obey Rules of Hooks
+  const monthlyCostData = useMemo(() => {
+    if (!selectedVehicle) return [];
+    if (chartRange === 'year') {
+      const now = new Date();
+      return [0, 1, 2].reverse().map((yearsAgo) => {
+        const year = now.getFullYear() - yearsAgo;
+        let total = 0;
+        for (let m = 0; m < 12; m++) {
+          const fuelSum = entries.filter((e) => {
+            const d = new Date(e.date);
+            return d.getFullYear() === year && d.getMonth() === m;
+          }).reduce((s, e) => s + e.total_cost, 0);
+          const svcSum = serviceRecords.filter((r) => {
+            const d = new Date(r.date);
+            return d.getFullYear() === year && d.getMonth() === m;
+          }).reduce((s, r) => s + (r.cost || 0), 0);
+          const expSum = expenses.filter((e) => {
+            const d = new Date(e.date);
+            return d.getFullYear() === year && d.getMonth() === m;
+          }).reduce((s, e) => s + e.amount, 0);
+          total += fuelSum + svcSum + expSum;
+        }
+        return { label: `${year}`, value: Math.round(total) };
+      });
+    }
+    // 6M / 12M: monthly breakdown
+    const months = chartRange === '12m' ? 12 : 6;
+    return getMonthlySpendHistory(entries, serviceRecords, expenses, months);
+  }, [chartRange, entries, serviceRecords, expenses, selectedVehicle]);
+
+  // ── Cross-vehicle comparison (reads DB directly, not per-vehicle store) ──
+  // Only built when there are 2+ active vehicles. Declared before the early
+  // return below to obey the Rules of Hooks.
+  const crossVehicleData = useMemo(() => {
+    if (vehicles.length < 2) return null;
+    return vehicles.map((v) => {
+      const vEntries = fuelRepo.getFuelEntriesByVehicleChronological(v.id);
+      const svc = serviceRepo.getServiceRecordsByVehicle(v.id);
+      const exp = expenseRepo.getExpensesByVehicle(v.id);
+      const mStats = computeMileageStats(vEntries);
+      const fuelCost = vEntries.reduce((s, e) => s + e.total_cost, 0);
+      const svcCost = svc.reduce((s, r) => s + (r.cost || 0), 0);
+      const expCost = exp.reduce((s, e) => s + e.amount, 0);
+      return {
+        id: v.id,
+        name: v.nickname,
+        avgMileage: mStats.runningAverage?.value ?? null,
+        mileageUnit: mStats.runningAverage ? MILEAGE_UNIT_LABELS[mStats.runningAverage.unit] : null,
+        totalCost: fuelCost + svcCost + expCost,
+      };
+    }).filter((d) => d.avgMileage !== null || d.totalCost > 0);
+  }, [vehicles]);
+
   if (!selectedVehicle) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -188,56 +243,7 @@ export default function StatsScreen() {
     return { label, value, color };
   });
 
-  // ── Monthly cost chart (respects chartRange toggle) ──
-  const monthlyCostData = useMemo(() => {
-    if (chartRange === 'year') {
-      // Yearly totals: last 3 calendar years
-      const now = new Date();
-      return [0, 1, 2].reverse().map((yearsAgo) => {
-        const year = now.getFullYear() - yearsAgo;
-        let total = 0;
-        for (let m = 0; m < 12; m++) {
-          const fuelSum = entries.filter((e) => {
-            const d = new Date(e.date);
-            return d.getFullYear() === year && d.getMonth() === m;
-          }).reduce((s, e) => s + e.total_cost, 0);
-          const svcSum = serviceRecords.filter((r) => {
-            const d = new Date(r.date);
-            return d.getFullYear() === year && d.getMonth() === m;
-          }).reduce((s, r) => s + (r.cost || 0), 0);
-          const expSum = expenses.filter((e) => {
-            const d = new Date(e.date);
-            return d.getFullYear() === year && d.getMonth() === m;
-          }).reduce((s, e) => s + e.amount, 0);
-          total += fuelSum + svcSum + expSum;
-        }
-        return { label: String(year), value: Math.round(total) };
-      });
-    }
-    return getMonthlySpendHistory(entries, serviceRecords, expenses, chartRange === '12m' ? 12 : 6);
-  }, [entries, serviceRecords, expenses, chartRange]);
 
-  // ── Cross-vehicle comparison (reads DB directly, not per-vehicle store) ──
-  // Only built when there are 2+ active vehicles.
-  const crossVehicleData = useMemo(() => {
-    if (vehicles.length < 2) return null;
-    return vehicles.map((v) => {
-      const entries = fuelRepo.getFuelEntriesByVehicleChronological(v.id);
-      const svc = serviceRepo.getServiceRecordsByVehicle(v.id);
-      const exp = expenseRepo.getExpensesByVehicle(v.id);
-      const mStats = computeMileageStats(entries);
-      const fuelCost = entries.reduce((s, e) => s + e.total_cost, 0);
-      const svcCost = svc.reduce((s, r) => s + (r.cost || 0), 0);
-      const expCost = exp.reduce((s, e) => s + e.amount, 0);
-      return {
-        id: v.id,
-        name: v.nickname,
-        avgMileage: mStats.runningAverage?.value ?? null,
-        mileageUnit: mStats.runningAverage ? MILEAGE_UNIT_LABELS[mStats.runningAverage.unit] : null,
-        totalCost: fuelCost + svcCost + expCost,
-      };
-    }).filter((d) => d.avgMileage !== null || d.totalCost > 0);
-  }, [vehicles]);
 
   // ── Distance-based stats ──
   const { kmTracked, costPerKm } = computeCostPerKm(

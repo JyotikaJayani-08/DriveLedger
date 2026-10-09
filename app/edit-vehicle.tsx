@@ -129,7 +129,7 @@ export default function EditVehicleScreen() {
       loadVehicles();
       router.back();
     } else {
-      Alert.alert('😧 Hmm...', 'Couldn\'t save the changes. Give it another shot — your car deserves better! 🚗');
+      Alert.alert('Hmm...', 'Could not save the changes. Give it another shot - your car deserves better!');
     }
   };
 

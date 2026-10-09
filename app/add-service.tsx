@@ -59,6 +59,8 @@ export default function AddServiceScreen() {
   const [garageName, setGarageName] = useState('');
   const [workDone, setWorkDone] = useState('');
   const [notes, setNotes] = useState('');
+  const [nextDueKm, setNextDueKm] = useState('');
+  const [nextDueDateDisplay, setNextDueDateDisplay] = useState('');
   const [error, setError] = useState('');
 
   // Initialize date display
@@ -79,6 +81,8 @@ export default function AddServiceScreen() {
         setGarageName(existing.garage_name || '');
         setWorkDone(existing.work_done || '');
         setNotes(existing.notes || '');
+        setNextDueKm(existing.next_due_km != null ? existing.next_due_km.toString() : '');
+        setNextDueDateDisplay(existing.next_due_date ? isoToDisplay(existing.next_due_date) : '');
       }
     }
   }, [params.id]);
@@ -130,6 +134,34 @@ export default function AddServiceScreen() {
       }
     }
 
+    let nextDueKmVal: number | null = null;
+    if (nextDueKm.trim()) {
+      nextDueKmVal = parseFloat(nextDueKm);
+      if (isNaN(nextDueKmVal) || nextDueKmVal <= 0) {
+        setError('Next due km must be a number greater than 0.');
+        return;
+      }
+      const baseOdo = odometer ? parseFloat(odometer) : selectedVehicle.current_odometer;
+      if (baseOdo && nextDueKmVal <= baseOdo) {
+        setError('Next due km must be higher than the current odometer reading.');
+        return;
+      }
+    }
+
+    let nextDueDateVal: string | null = null;
+    if (nextDueDateDisplay.trim()) {
+      const ndv = validateDateDisplay(nextDueDateDisplay);
+      nextDueDateVal = ndv.isValid ? displayToISO(nextDueDateDisplay) : null;
+      if (!nextDueDateVal) {
+        setError(ndv.error || 'Enter a valid next due date in DD/MM/YYYY format.');
+        return;
+      }
+      if (nextDueDateVal < isoDate) {
+        setError('Next due date cannot be before the service date.');
+        return;
+      }
+    }
+
     setError('');
 
     if (isEditMode && params.id) {
@@ -141,6 +173,8 @@ export default function AddServiceScreen() {
         garage_name: garageName || null,
         work_done: workDone || null,
         notes: notes || null,
+        next_due_km: nextDueKmVal,
+        next_due_date: nextDueDateVal,
       });
       Alert.alert('✅ Service Updated!', 'Your maintenance record is all up to date 🔧', [
         { text: 'Sweet!', onPress: () => router.back() },
@@ -155,6 +189,8 @@ export default function AddServiceScreen() {
         garage_name: garageName || undefined,
         work_done: workDone || undefined,
         notes: notes || undefined,
+        next_due_km: nextDueKmVal ?? undefined,
+        next_due_date: nextDueDateVal ?? undefined,
       });
       router.back();
     }
@@ -273,6 +309,28 @@ export default function AddServiceScreen() {
           placeholderTextColor={colors.textTertiary}
           value={notes}
           onChangeText={setNotes}
+        />
+
+        {/* ── Next Due (optional) ── */}
+        <Text style={[styles.label, { color: colors.textSecondary }]}>Next Due: Odometer (km)</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+          placeholder="e.g., 20000 (optional)"
+          placeholderTextColor={colors.textTertiary}
+          value={nextDueKm}
+          onChangeText={setNextDueKm}
+          keyboardType="numeric"
+        />
+
+        <Text style={[styles.label, { color: colors.textSecondary }]}>Next Due: Date (DD/MM/YYYY)</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+          placeholder="DD/MM/YYYY (optional)"
+          placeholderTextColor={colors.textTertiary}
+          value={nextDueDateDisplay}
+          onChangeText={(t) => setNextDueDateDisplay(formatDateInput(t, nextDueDateDisplay))}
+          keyboardType="number-pad"
+          maxLength={10}
         />
 
         {error ? (

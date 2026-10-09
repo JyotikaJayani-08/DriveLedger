@@ -13,18 +13,18 @@
  * - Wired to centralized documentStore
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert, Modal } from 'react-native';
-import * as Sharing from 'expo-sharing';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { useThemeColors } from '@/hooks/useThemeColors';
-import { Typography, Spacing, Sizing } from '@/constants/theme';
-import { useVehicleStore } from '@/stores/vehicleStore';
-import { useDocumentStore } from '@/stores/documentStore';
-import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_ICONS } from '@/constants/documentTypes';
-import { formatDisplayDateLong, daysUntil } from '@/utils/date';
-import type { VehicleDocument } from '@/types/document';
 import { VehicleContextHeader } from '@/components/VehicleContextHeader';
+import { DOCUMENT_TYPE_ICONS, DOCUMENT_TYPE_LABELS } from '@/constants/documentTypes';
+import { Sizing, Spacing, Typography } from '@/constants/theme';
+import { useThemeColors } from '@/hooks/useThemeColors';
+import { useDocumentStore } from '@/stores/documentStore';
+import { useVehicleStore } from '@/stores/vehicleStore';
+import type { VehicleDocument } from '@/types/document';
+import { daysUntil, formatDisplayDateLong } from '@/utils/date';
+import { useFocusEffect, useRouter } from 'expo-router';
+import * as Sharing from 'expo-sharing';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, FlatList, Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function DocumentsScreen() {
   const colors = useThemeColors();
@@ -60,7 +60,7 @@ export default function DocumentsScreen() {
     const label = DOCUMENT_TYPE_LABELS[doc.type as keyof typeof DOCUMENT_TYPE_LABELS] || doc.type;
     Alert.alert(
       `Renew ${label} 🔄`,
-      `Time to freshen up that ${label}! A new record will be created and the current one retired.\n\nWe'll take you to the form — just fill in the new details.`,
+      `Time to freshen up that ${label}! A new record will be created and the current one retired.\n\nWe'll take you to the form - just fill in the new details.`,
       [
         { text: 'Maybe Later', style: 'cancel' },
         {
@@ -79,22 +79,38 @@ export default function DocumentsScreen() {
   /**
    * Open a document file:
    * - Images: show fullscreen modal
-   * - PDFs: share via expo-sharing (works with file:// URIs on Android)
+   * - PDFs: pass the raw file:// URI to expo-sharing.
+   *   SharingModule.kt (native Android) internally calls
+   *   FileProvider.getUriForFile() to wrap it as a content:// URI
+   *   and grants read permission to target apps.
+   *   We must NOT pre-convert with getContentUriAsync because
+   *   expo-sharing explicitly rejects non-file:// URIs.
    */
   const openDocumentFile = async (uri: string) => {
     if (uri.toLowerCase().endsWith('.pdf')) {
       try {
         const isAvailable = await Sharing.isAvailableAsync();
-        if (isAvailable) {
-          await Sharing.shareAsync(uri, {
-            mimeType: 'application/pdf',
-            dialogTitle: 'Open PDF with…',
-          });
-        } else {
-          Alert.alert('📄 No PDF App Found', 'Your device doesn\'t have a PDF viewer installed. Try installing Adobe Acrobat or any PDF reader! 🙂');
+        if (!isAvailable) {
+          Alert.alert(
+            '📄 No PDF App Found',
+            'Your device does not have a PDF viewer installed. Try installing Adobe Acrobat or any PDF reader!'
+          );
+          return;
         }
+        // Pass the raw file:// URI — expo-sharing's native layer wraps it
+        // in a FileProvider content:// URI for Android automatically.
+        await Sharing.shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Open PDF with...',
+        });
       } catch (e) {
-        Alert.alert('🙈 Oops!', 'Couldn\'t open the PDF. It might have moved or been deleted. Try removing and re-attaching it.');
+        const msg = e instanceof Error ? e.message : '';
+        // User dismissed the chooser — not an error
+        if (msg.includes('cancelled') || msg.includes('canceled') || msg.includes('dismiss')) return;
+        Alert.alert(
+          '🙈 Oops! Could Not Open PDF 📄',
+          'The PDF could not be opened. It may have been moved or deleted. Try removing and re-attaching it.'
+        );
       }
     } else {
       setViewerUri(uri);

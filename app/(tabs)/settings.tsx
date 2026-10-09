@@ -494,7 +494,7 @@ export default function SettingsScreen() {
                 {isExporting && <ActivityIndicator size="small" color={colors.primary} />}
               </View>
               <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginTop: 2, marginLeft: 28 }]}>
-                Saves a signed .dlbak file — only DriveLedger can restore it
+                Saves a signed .dlbak file - only DriveLedger can restore it
               </Text>
             </View>
             <Text style={{ color: colors.primary, fontSize: 20 }}>⬇️</Text>
@@ -504,7 +504,7 @@ export default function SettingsScreen() {
           <SettingsRow
             emoji="📊"
             title="Export as CSV"
-            subtitle="Fuel, service & expenses in one sheet — opens in Excel / Google Sheets"
+            subtitle="Fuel, service & expenses in one sheet - opens in Excel / Google Sheets"
             colors={colors}
             onPress={handleExportCsv}
           />
@@ -523,7 +523,7 @@ export default function SettingsScreen() {
                 {isImporting && <ActivityIndicator size="small" color={colors.primary} />}
               </View>
               <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginTop: 2, marginLeft: 28 }]}>
-                Browse & pick a .dlbak file — signature is verified before restore
+                Browse & pick a .dlbak file - signature is verified before restore
               </Text>
             </View>
             <Text style={{ color: colors.textSecondary, fontSize: 18 }}>📂</Text>
@@ -539,7 +539,7 @@ export default function SettingsScreen() {
             onPress={() =>
               Alert.alert(
                 'DriveLedger v1.0.3 🚗',
-                'Fuel, mileage, services, documents — all tracked, all offline, zero drama.\n\nNo account. No cloud. Your data stays on your phone, where it belongs. 🔐',
+                'Fuel, mileage, services, documents - all tracked, all offline, zero drama.\n\nNo account. No cloud. Your data stays on your phone, where it belongs. 🔐',
                 [{ text: 'Love it! ❤️' }]
               )
             }

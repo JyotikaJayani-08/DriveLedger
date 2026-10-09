@@ -18,6 +18,7 @@ export interface ServiceTemplateItem {
 }
 
 export const SERVICE_TEMPLATES: ServiceTemplateItem[] = [
+  { id: 'periodic', name: 'Periodic Maintenance', icon: '🛠️' },
   { id: 'engine_oil', name: 'Engine Oil Change', icon: '🛢️' },
   { id: 'oil_filter', name: 'Oil Filter', icon: '🔧' },
   { id: 'air_filter', name: 'Air Filter', icon: '💨' },

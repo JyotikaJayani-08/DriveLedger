@@ -251,6 +251,10 @@ export default function HomeScreen() {
               <Text style={[Typography.caption, { color: colors.textTertiary }]}>Full</Text>
             </View>
 
+            <Text style={[Typography.bodySmall, { color: colors.text, fontWeight: '600', marginTop: Spacing.sm }]}>
+              ≈ {fuelLevel.remainingLitres.toFixed(1)} L left · ~{fuelLevel.kmRemaining.toLocaleString()} km range
+            </Text>
+
             <Text style={[Typography.caption, { color: colors.textTertiary, marginTop: Spacing.xs }]}>
               Est. based on avg mileage · Tank: {selectedVehicle.tank_capacity}L
             </Text>
