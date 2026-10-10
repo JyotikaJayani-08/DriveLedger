@@ -29,6 +29,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useVehicleStore } from '@/stores/vehicleStore';
 import { useDocumentStore } from '@/stores/documentStore';
 import { useThemeColors } from '@/hooks/useThemeColors';
@@ -93,6 +94,51 @@ export default function AddDocumentScreen() {
     return <NoVehicleState />;
   }
 
+  /** Copies picked asset to permanent app document directory so it survives cache purges. */
+  const copyToPermanentStorage = async (sourceUri: string, isPdf: boolean): Promise<string> => {
+    const ext = isPdf ? '.pdf' : '.jpg';
+    const dir = `${FileSystem.documentDirectory}attachments/`;
+    try {
+      const dirInfo = await FileSystem.getInfoAsync(dir);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+      }
+    } catch (_) {}
+
+    const destUri = `${dir}doc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}${ext}`;
+
+    // Attempt 1: Native copyAsync (handles content:// and internal files via ContentResolver)
+    try {
+      await FileSystem.copyAsync({ from: sourceUri, to: destUri });
+      return destUri;
+    } catch (copyErr) {
+      console.warn('copyAsync failed, trying stream fallback:', copyErr);
+    }
+
+    // Attempt 2: React Native fetch blob + FileReader base64 (bypasses Expo permission gate)
+    try {
+      const res = await fetch(sourceUri);
+      const blob = await res.blob();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const dataUrl = reader.result as string;
+          resolve(dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      await FileSystem.writeAsStringAsync(destUri, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      return destUri;
+    } catch (streamErr) {
+      console.warn('Fallback stream failed:', streamErr);
+    }
+
+    return sourceUri;
+  };
+
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -107,7 +153,8 @@ export default function AddDocumentScreen() {
     });
 
     if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri);
+      const permanentUri = await copyToPermanentStorage(result.assets[0].uri, false);
+      setPhotoUri(permanentUri);
     }
   };
 
@@ -124,7 +171,8 @@ export default function AddDocumentScreen() {
     });
 
     if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri);
+      const permanentUri = await copyToPermanentStorage(result.assets[0].uri, false);
+      setPhotoUri(permanentUri);
     }
   };
 
@@ -138,12 +186,17 @@ export default function AddDocumentScreen() {
   };
 
   const pickPDF = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: 'application/pdf',
-      copyToCacheDirectory: true,
-    });
-    if (!result.canceled && result.assets && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+        copyToCacheDirectory: false, // Ensures Android returns content:// URI which ContentResolver streams reliably
+      });
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const permanentUri = await copyToPermanentStorage(result.assets[0].uri, true);
+        setPhotoUri(permanentUri);
+      }
+    } catch (e) {
+      Alert.alert('Could Not Attach PDF', e instanceof Error ? e.message : 'Unknown error');
     }
   };
 

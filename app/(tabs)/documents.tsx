@@ -22,9 +22,11 @@ import { useVehicleStore } from '@/stores/vehicleStore';
 import type { VehicleDocument } from '@/types/document';
 import { daysUntil, formatDisplayDateLong } from '@/utils/date';
 import { useFocusEffect, useRouter } from 'expo-router';
+import * as IntentLauncher from 'expo-intent-launcher';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, Image, Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function DocumentsScreen() {
   const colors = useThemeColors();
@@ -87,29 +89,88 @@ export default function DocumentsScreen() {
    *   expo-sharing explicitly rejects non-file:// URIs.
    */
   const openDocumentFile = async (uri: string) => {
-    if (uri.toLowerCase().endsWith('.pdf')) {
+    const isPDF = Boolean(uri && (uri.toLowerCase().includes('.pdf') || uri.toLowerCase().endsWith('.pdf')));
+    if (isPDF) {
       try {
-        const isAvailable = await Sharing.isAvailableAsync();
-        if (!isAvailable) {
+        const cacheDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+        const shareUri = `${cacheDir}share_${Date.now()}.pdf`;
+
+        let readyToOpen = false;
+
+        // Try Method 1: copyAsync (works for content:// and internal files via ContentResolver)
+        try {
+          await FileSystem.copyAsync({ from: uri, to: shareUri });
+          readyToOpen = true;
+        } catch (copyErr) {
+          console.warn('copyAsync to cache failed, trying stream fallback:', copyErr);
+        }
+
+        // Try Method 2: fetch blob -> base64 -> writeAsStringAsync (bypasses Expo permission gate for unscoped paths)
+        if (!readyToOpen) {
+          try {
+            const res = await fetch(uri);
+            const blob = await res.blob();
+            const base64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const dataUrl = reader.result as string;
+                resolve(dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl);
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+            await FileSystem.writeAsStringAsync(shareUri, base64, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            readyToOpen = true;
+          } catch (fetchErr) {
+            console.warn('Fetch fallback to cache failed:', fetchErr);
+          }
+        }
+
+        if (!readyToOpen) {
           Alert.alert(
-            '📄 No PDF App Found',
-            'Your device does not have a PDF viewer installed. Try installing Adobe Acrobat or any PDF reader!'
+            '📄 Document File Inaccessible',
+            'This PDF is no longer accessible on your device (it may have been stored in a temporary location that Android cleared). Please tap Edit on this document and re-upload your PDF.'
           );
           return;
         }
-        // Pass the raw file:// URI — expo-sharing's native layer wraps it
-        // in a FileProvider content:// URI for Android automatically.
-        await Sharing.shareAsync(uri, {
-          mimeType: 'application/pdf',
-          dialogTitle: 'Open PDF with...',
-        });
+
+        // On Android: Open DIRECTLY with the default PDF viewer (ACTION_VIEW)
+        if (Platform.OS === 'android') {
+          try {
+            const contentUri = await FileSystem.getContentUriAsync(shareUri);
+            await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+              data: contentUri,
+              flags: 1, // Intent.FLAG_GRANT_READ_URI_PERMISSION
+              type: 'application/pdf',
+            });
+            return;
+          } catch (intentErr) {
+            console.warn('Direct ACTION_VIEW failed, falling back to share sheet:', intentErr);
+          }
+        }
+
+        // Fallback for iOS or if no default viewer handled ACTION_VIEW:
+        const isAvailable = await Sharing.isAvailableAsync();
+        if (isAvailable) {
+          await Sharing.shareAsync(shareUri, {
+            mimeType: 'application/pdf',
+            dialogTitle: 'Open PDF',
+          });
+        } else {
+          Alert.alert(
+            '📄 No PDF Viewer Available',
+            'Your device cannot open PDFs. Install a PDF viewer like Google Drive or Adobe Acrobat to view it.'
+          );
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : '';
-        // User dismissed the chooser — not an error
+        // User dismissed chooser / viewer — not an error
         if (msg.includes('cancelled') || msg.includes('canceled') || msg.includes('dismiss')) return;
         Alert.alert(
-          '🙈 Oops! Could Not Open PDF 📄',
-          'The PDF could not be opened. It may have been moved or deleted. Try removing and re-attaching it.'
+          '🙈 Could Not Open PDF',
+          `Unable to open PDF: ${msg || 'File may be inaccessible'}. Try editing the document and re-uploading the PDF.`
         );
       }
     } else {
@@ -268,7 +329,7 @@ function DocumentCard({
   }, []);
 
   const isExpiredOrExpiring = item.expiry_date && daysUntil(item.expiry_date) <= 30;
-  const isPDF = item.file_uri?.toLowerCase().endsWith('.pdf');
+  const isPDF = Boolean(item.file_uri && (item.file_uri.toLowerCase().endsWith('.pdf') || item.file_uri.toLowerCase().includes('.pdf')));
 
   const handleTap = () => {
     const now = Date.now();
@@ -337,12 +398,16 @@ function DocumentCard({
         <Image source={{ uri: item.file_uri }} style={styles.docPhoto} resizeMode="cover" />
       )}
       {item.file_uri && isPDF && (
-        <View style={[styles.pdfBanner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <TouchableOpacity
+          onPress={() => onView(item)}
+          activeOpacity={0.7}
+          style={[styles.pdfBanner, { backgroundColor: colors.surface, borderColor: colors.border }]}
+        >
           <Text style={{ fontSize: 20 }}>📄</Text>
-          <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginLeft: Spacing.sm }]}>
-            PDF attached — double tap to open
+          <Text style={[Typography.bodySmall, { color: colors.primary, marginLeft: Spacing.sm, fontWeight: '600' }]}>
+            PDF attached — tap to open ↗
           </Text>
-        </View>
+        </TouchableOpacity>
       )}
 
       {/* ── Renew Button (M-07) ── */}

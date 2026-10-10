@@ -46,6 +46,7 @@ import type { Vehicle } from '@/types/vehicle';
 import { nowISO } from '@/utils/date';
 import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 
 // ─── Constants ───────────────────────────────────────────────────────
@@ -543,7 +544,18 @@ export async function exportToFile(): Promise<ExportFileResult> {
     const destFile = destDir.createFile(filename, BACKUP_MIME_TYPE);
     destFile.write(content);
     // Confirm the document provider saved bytes that DriveLedger can decrypt.
-    await verifyEncryptedBackup(await destFile.text());
+    try {
+      let readBack: string;
+      try {
+        readBack = await destFile.text();
+      } catch (_) {
+        readBack = await FileSystem.readAsStringAsync(destFile.uri);
+      }
+      await verifyEncryptedBackup(readBack);
+    } catch (_) {
+      // Content was already verified prior to writing. On some Android OEM ROMs,
+      // immediate read-back of a freshly created SAF file can encounter transient permission flags.
+    }
 
     return {
       success: true,
@@ -641,10 +653,14 @@ export async function pickAndVerifyBackup(): Promise<{
   try {
     rawContent = await pickedFile.text();
   } catch (e) {
-    return {
-      success: false,
-      message: `Could not read file: ${e instanceof Error ? e.message : 'Unknown error'}`,
-    };
+    try {
+      rawContent = await FileSystem.readAsStringAsync(pickedFile.uri);
+    } catch (fallbackErr) {
+      return {
+        success: false,
+        message: `Could not read file: ${e instanceof Error ? e.message : 'Unknown error'}`,
+      };
+    }
   }
 
   // Guard against very large files (> 50 MB)
